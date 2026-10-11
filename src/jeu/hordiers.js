@@ -1,0 +1,28 @@
+// Les 23, leurs signes tels que le roman les note, leur place dans la formation,
+// et une teinte de laine ou de terre pour les reconnaître sans crier.
+// rang 0 : le Fer, devant ; dernier rang : le Croc. slot = [travers, recul].
+export const HORDIERS = [
+  { id: 'golgoth', ton: '#8a3f30', nom: 'Golgoth', signe: 'Ω', role: 'traceur', slot: [0, 0], expo: 1 },
+  { id: 'erg', ton: '#5a4a42', nom: 'Erg Machaon', signe: 'Δ', role: 'combattant-protecteur', slot: [-1.3, 1.7], expo: 0.95 },
+  { id: 'firost', ton: '#6f6a58', nom: 'Firost de Toroge', signe: '>', role: 'pilier', slot: [1.3, 1.7], expo: 0.95 },
+  { id: 'sov', ton: '#4f5f6e', nom: 'Sov Strochnis', signe: ')', role: 'scribe', slot: [0, 3.2], expo: 0.8 },
+  { id: 'talweg', ton: '#7b6a45', nom: 'Talweg Arcippé', signe: '¬', role: 'géomaître', slot: [-2.1, 3.6], expo: 0.8 },
+  { id: 'pietro', ton: '#6a4660', nom: 'Pietro Della Rocca', signe: 'π', role: 'prince', slot: [2.1, 3.6], expo: 0.8 },
+  { id: 'horst', ton: '#5d6f63', nom: 'Horst Dubka', signe: '∞', role: 'ailier', slot: [-4.4, 4.2], expo: 0.9 },
+  { id: 'karst', ton: '#6a7d6b', nom: 'Karst Dubka', signe: '∞', role: 'ailier', slot: [4.4, 4.2], expo: 0.9 },
+  { id: 'arval', ton: '#a08a55', nom: 'Arval Redhamaj', signe: ')-', role: 'éclaireur', slot: [0, -6], expo: 0.9, avant: true },
+  { id: 'oroshi', ton: '#486878', nom: 'Oroshi Melicerte', signe: 'x', role: 'aéromaîtresse', slot: [-1.1, 5.1], expo: 0.62 },
+  { id: 'steppe', ton: '#77855a', nom: 'Steppe Phorehys', signe: '´,', role: 'fleuron', slot: [1.1, 5.1], expo: 0.6 },
+  { id: 'alme', ton: '#9a8a78', nom: 'Alme Capys', signe: '(.)', role: 'soigneuse', slot: [-2.9, 6], expo: 0.62 },
+  { id: 'aoi', ton: '#57786e', nom: 'Aoi Nan', signe: '<>', role: 'cueilleuse et sourcière', slot: [2.9, 6], expo: 0.62 },
+  { id: 'caracole', ton: '#9c6b3f', nom: 'Caracole', signe: '¿´', role: 'troubadour', slot: [0, 6.6], expo: 0.58 },
+  { id: 'callirhoe', ton: '#a05a3c', nom: 'Callirhoé Déicoon', signe: '~', role: 'feuleuse', slot: [-1.5, 7.5], expo: 0.56 },
+  { id: 'larco', ton: '#56606a', nom: 'Larco Scarsa', signe: '∫', role: 'braconnier du ciel', slot: [1.5, 7.5], expo: 0.56 },
+  { id: 'learch', ton: '#6d5f55', nom: 'Léarch', signe: '◊', role: 'artisan du métal', slot: [-3.2, 8.2], expo: 0.58 },
+  { id: 'boscavo', ton: '#7c6244', nom: 'Boscavo Silamphre', signe: '∂', role: 'artisan du bois', slot: [3.2, 8.2], expo: 0.58 },
+  { id: 'tourse', ton: '#8b7a5e', nom: 'Tourse', signe: '^', role: 'autoursier', slot: [-0.9, 9.2], expo: 0.6 },
+  { id: 'darbon', ton: '#6e5a47', nom: 'Darbon', signe: 'ˇ•', role: 'fauconnier', slot: [0.9, 9.2], expo: 0.6 },
+  { id: 'coriolis', ton: '#444a52', nom: 'Coriolis', signe: '≈', role: 'croc', slot: [-2.2, 10.4], expo: 0.7 },
+  { id: 'barbak', ton: '#4d4440', nom: 'Barbak', signe: ']]', role: 'croc', slot: [0, 10.8], expo: 0.7 },
+  { id: 'sveziest', ton: '#3f4a46', nom: 'Sveziest', signe: '√', role: 'croc', slot: [2.2, 10.4], expo: 0.7 },
+];
