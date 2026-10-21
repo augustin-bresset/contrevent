@@ -98,6 +98,7 @@ button:hover { text-decoration-color: var(--garance); }
 #lieux li::before { content: ''; position: absolute; left: 0; width: 1px; height: 16px; background: var(--encre); opacity: .5; }
 #lieux li.h::before { top: -16px; } #lieux li.b::before { bottom: -16px; }
 #lieux span { position: absolute; left: 0; transform: translateX(-50%); white-space: nowrap; font-size: 15px; font-weight: 300; }
+#lieux li.debut span { transform: none; }
 #lieux li.h span { bottom: calc(100% + 18px); } #lieux li.b span { top: calc(100% + 18px); }
 #menu .sens { display: flex; justify-content: space-between; width: min(1320px, calc(100vw - 80px)); margin-top: 58px; font-style: italic; font-weight: 300; font-size: 17px; }
 #menu .choix { display: flex; flex-wrap: wrap; justify-content: center; gap: 34px; margin-top: 26px; font-size: 19px; font-weight: 300; }

@@ -26,15 +26,15 @@ export class Herbe {
     this.mesh = new THREE.Mesh(g, new THREE.ShaderMaterial({
       uniforms: this.u, side: THREE.DoubleSide,
       vertexShader: /* glsl */`
-        uniform sampler2D tH, tPal, tBruit, tVent; uniform vec2 uMonde, uCentre, uHordeH; uniform float uTemps, uRayon, uPas, uRespirH, uPres;
+        uniform sampler2D tH, tPal, tBruit, tVent; uniform vec2 uAnneau, uCentre, uHordeH; uniform float uTemps, uRayon, uPas, uRespirH, uPres, uBande;
         attribute vec2 iG; varying vec3 vC, vP; varying float vT, vL, vProf;
         void main() {
           vec2 cel = iG + floor(uCentre / uPas);
           vec4 r = texture2D(tBruit, (mod(cel, 256.0) + 0.5) / 256.0);
-          vec2 pos = (cel + 0.5 + (r.xy - 0.5)) * uPas, uv = pos / uMonde;
+          vec2 pos = (cel + 0.5 + (r.xy - 0.5)) * uPas, uv = pos / uAnneau; float sv = pos.y / uBande;
           vec2 d = pos - uCentre; float dc = length(d) / uRayon;
           float hs = texture2D(tH, uv).r;
-          vec4 reg = texture2D(tPal, vec2(5.5 / 7.0, uv.y));
+          vec4 reg = texture2D(tPal, vec2(5.5 / 7.0, sv));
           float patch_ = texture2D(tBruit, pos * 0.0042).g;
           float dens = reg.a * (0.46 + 1.4 * smoothstep(0.36, 0.6, patch_));
           if (r.b > dens || hs < 0.08 || dc > 1.0) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
@@ -54,7 +54,7 @@ export class Herbe {
           vec2 cote = vec2(cos(a), sin(a)) * position.x * l * (1.0 + 0.4 * length(cour));
           vec2 sol = pos + cote + cour * H * y * y;
           vec3 w3 = vec3(sol.x, hs + y * H * (1.0 - 0.34 * min(1.0, length(cour)) * y), -sol.y);
-          vec3 ton = texture2D(tPal, vec2(6.5 / 7.0, uv.y)).rgb, lum = texture2D(tPal, vec2(1.5 / 7.0, uv.y)).rgb;
+          vec3 ton = texture2D(tPal, vec2(6.5 / 7.0, sv)).rgb, lum = texture2D(tPal, vec2(1.5 / 7.0, sv)).rgb;
           float var = 0.82 + 0.3 * r.g;
           vC = mix(ton * 0.92, mix(ton, lum, 0.22 + 0.68 * vague), y) * var;
           vP = vec3(w3.x, w3.y, -w3.z); vT = y; vL = 0.45 + 0.5 * y;

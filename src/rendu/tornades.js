@@ -5,18 +5,18 @@ import * as THREE from 'three';
 const NB = 4, PAR = 5200;
 
 export class Tornades {
-  constructor(tH, tPal, uMonde) {
+  constructor(tH, tPal, uAnneau, uBande) {
     const n = NB * PAR, a = new Float32Array(n * 3);
     for (let i = 0; i < n; i++) { a[i * 3] = Math.random(); a[i * 3 + 1] = Math.random(); a[i * 3 + 2] = Math.floor(i / PAR); }
     const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(a, 3));
     this.u = {
-      tH: { value: tH }, tPal: { value: tPal }, uMonde: { value: uMonde }, uTemps: { value: 0 }, uPx: { value: 1 },
+      tH: { value: tH }, tPal: { value: tPal }, uAnneau: { value: uAnneau }, uBande: { value: uBande }, uTemps: { value: 0 }, uPx: { value: 1 },
       uT: { value: Array.from({ length: NB }, () => new THREE.Vector4()) },
     };
     this.mesh = new THREE.Points(g, new THREE.ShaderMaterial({
       uniforms: this.u, transparent: true, depthWrite: false,
       vertexShader: /* glsl */`
-        uniform sampler2D tH, tPal; uniform vec2 uMonde; uniform float uTemps, uPx; uniform vec4 uT[${NB}];
+        uniform sampler2D tH, tPal; uniform vec2 uAnneau; uniform float uTemps, uPx, uBande; uniform vec4 uT[${NB}];
         varying float vA; varying vec3 vC;
         void main() {
           vec4 t = uT[int(position.z)];
@@ -27,9 +27,9 @@ export class Tornades {
           float rayon = t.z * (0.1 + 0.95 * pow(h, 1.5)) * (0.72 + 0.34 * id2) * (1.0 + 0.1 * sin(h * 18.0 + uTemps * 2.0));
           float ang = id * 62.83 + uTemps * (2.4 + 3.4 / (0.25 + h * 1.6)) * sign(t.w);
           vec2 p = t.xy + vec2(cos(ang), sin(ang)) * rayon + vec2(sin(h * 7.0 + uTemps), cos(h * 6.0 - uTemps * 0.8)) * h * t.z * 0.14;
-          float sol = max(texture2D(tH, p / uMonde).r, 0.0);
+          float sol = max(texture2D(tH, p / uAnneau).r, 0.0);
           vec4 mv = modelViewMatrix * vec4(p.x, sol + haut, -p.y, 1.0);
-          float sv = p.y / uMonde.y;
+          float sv = p.y / uBande;
           vec3 om = texture2D(tPal, vec2(0.5 / 7.0, sv)).rgb, lu = texture2D(tPal, vec2(1.5 / 7.0, sv)).rgb, en = texture2D(tPal, vec2(2.5 / 7.0, sv)).rgb;
           vC = mix(en, mix(om, lu, id2), smoothstep(0.0, 0.6, h));
           vA = smoothstep(0.0, 0.08, h) * (1.0 - smoothstep(0.62, 1.0, h)) * (0.3 + 0.6 * id);

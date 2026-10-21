@@ -17,7 +17,7 @@ export class Nuages {
           float m = fbm3(pn), n = smoothstep(0.5, 0.72, m), e = fbm3(pn * 5.1 + uTemps * 0.01);
           n = smoothstep(0.0, 1.0, n * (0.62 + 0.76 * e));
           float trou = smoothstep(40.0, 150.0, length(p - uHordeN));     // la Horde reste à découvert
-          float t = tempeteA(uSv * uMonde.y);
+          float t = tempeteA(uSv * uBande);
           vec3 c = mix(vec3(1.0), palette(1, uSv), 0.26);
           c = mix(c, vec3(0.1, 0.13, 0.22), uNuit); c = mix(c, vec3(0.13, 0.09, 0.07), t);
           gl_FragColor = vec4(mix(c, BLANC_FIN, uReve), n * n * trou * 0.46 * uForce);

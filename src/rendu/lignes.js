@@ -9,10 +9,10 @@ export const FENETRE = 620;   // côté de la fenêtre, en unités du monde
 const NB_PAS = 23;
 
 export class Lignes {
-  constructor(renderer, tVent, uMonde, { cote = 180, res = 2048 } = {}) {
+  constructor(renderer, tVent, uAnneau, { cote = 180, res = 2048 } = {}) {
     this.renderer = renderer; this.cote = cote; this.res = res;
     this.commun = {
-      tVent: { value: tVent }, uMonde: { value: uMonde },
+      tVent: { value: tVent }, uAnneau: { value: uAnneau },
       uRemous: { value: Array.from({ length: NB_REMOUS }, () => new THREE.Vector4()) },
       uFront: { value: new THREE.Vector3(-1e6, -1e6, 1) },
       uNavire: { value: new THREE.Vector4() },

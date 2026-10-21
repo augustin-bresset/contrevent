@@ -11,7 +11,7 @@ export class Front {
       const m = new THREE.Mesh(geo, new THREE.ShaderMaterial({
         uniforms: { ...this.u, uK: { value: k } }, transparent: true, depthWrite: false, side: THREE.DoubleSide,
         vertexShader: /* glsl */`
-          uniform sampler2D tH, tBruit; uniform vec2 uMonde; uniform float uA, uW, uK, uTemps;
+          uniform sampler2D tH, tBruit; uniform vec2 uAnneau; uniform float uA, uW, uK, uTemps;
           varying vec2 vQ; varying vec3 vP; varying float vProf, vH;
           void main() {
             float x = -160.0 + position.x * (uW + 320.0), y = position.y;
@@ -20,7 +20,7 @@ export class Front {
             float fes = texture2D(tBruit, qn).r + 0.5 * texture2D(tBruit, qn * 2.3).g - 0.75;
             float H = 74.0 + 64.0 * fes + 20.0 * uK;
             float s = uA + fes * 120.0 + uK * 36.0 - y * y * 46.0;
-            float sol = max(texture2D(tH, vec2(x, s) / uMonde).r, 0.0);
+            float sol = max(texture2D(tH, vec2(x, s) / uAnneau).r, 0.0);
             vec3 w = vec3(x, sol + y * H, -s);
             vQ = vec2(x, y); vP = vec3(w.x, w.y, s); vH = H;
             vec4 mv = modelViewMatrix * vec4(w, 1.0); vProf = -mv.z;

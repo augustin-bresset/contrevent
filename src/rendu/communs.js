@@ -5,7 +5,7 @@ export const NB_REMOUS = 8;
 // Le vent de jeu, identique à `ventInstant` dans jeu/vent.js.
 export const GLSL_VENT = /* glsl */`
 uniform sampler2D tVent;
-uniform vec2 uMonde;
+uniform vec2 uAnneau;
 uniform vec4 uRemous[${NB_REMOUS}];     // x, s, rayon, force (signe = sens)
 uniform vec3 uFront;                    // front (s), queue (s), multiplicateur
 uniform vec4 uNavire;                   // x, s, rayon, présence
@@ -15,7 +15,7 @@ float masqueTempete(float s) {
   return smoothstep(uFront.x - 34.0, uFront.x + 34.0, s) * (1.0 - smoothstep(uFront.y - 90.0, uFront.y + 90.0, s));
 }
 vec2 ventIci(vec2 p) {
-  vec2 w = texture2D(tVent, p / uMonde).xy * uRespir;
+  vec2 w = texture2D(tVent, p / uAnneau).xy * uRespir;
   float m = masqueTempete(p.y);
   w *= 1.0 + (uFront.z - 1.0) * m;
   if (uNavire.w > 0.0) {
@@ -40,9 +40,9 @@ void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }`;
 // Ce que partagent le sol, les monuments, les semis et le ciel : même lumière, même nuit, même furvent.
 export const GLSL_COMMUN = /* glsl */`
 uniform sampler2D tPal, tBruit;
-uniform vec2 uMonde;
+uniform vec2 uAnneau;                     // le terrain chargé : il tourne sur lui-même, s modulo la longueur de l'anneau
 uniform vec3 uFrontT, uSoleil, uSoleilC;   // front, queue, présence ; soleil du dessin ; soleil du ciel
-uniform float uTemps, uNuit, uBrouillard, uReve, uSv, uEclair;
+uniform float uTemps, uNuit, uBrouillard, uReve, uSv, uEclair, uBande;
 vec3 palette(int col, float s) { return texture2D(tPal, vec2((float(col) + 0.5) / 7.0, s)).rgb; }
 float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float bruit(vec2 p) { return texture2D(tBruit, p / 256.0).r; }
@@ -56,11 +56,11 @@ float tempeteA(float s) {
 const vec3 BLANC_FIN = vec3(0.984, 0.98, 0.973);
 vec3 horizon() {
   vec3 c = mix(palette(4, uSv), vec3(0.06, 0.09, 0.17), uNuit);
-  return mix(c, vec3(0.03, 0.028, 0.034), tempeteA(uSv * uMonde.y));
+  return mix(c, vec3(0.03, 0.028, 0.034), tempeteA(uSv * uBande));
 }
 vec3 couleurCiel(vec3 d) {
   vec3 hor = horizon();
-  float t = tempeteA(uSv * uMonde.y), y = max(d.y, 0.0);
+  float t = tempeteA(uSv * uBande), y = max(d.y, 0.0);
   vec3 zen = mix(mix(palette(0, uSv), vec3(0.34, 0.5, 0.74), 0.55) * 0.95, vec3(0.012, 0.02, 0.05), uNuit);
   zen = mix(zen, vec3(0.012, 0.011, 0.014), t);
   vec3 c = mix(hor, zen, 1.0 - exp(-y * 3.4));

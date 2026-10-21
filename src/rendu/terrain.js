@@ -6,18 +6,19 @@ import { GLSL_COMMUN, GLSL_OMBRE } from './communs.js';
 import { SOLEIL } from '../monde/contrees.js';
 
 const VERT = /* glsl */`
-uniform sampler2D tH, tPal, tVent; uniform vec2 uMonde, uCentreMaille; uniform float uDescente; uniform mat4 uOmbreM;
+uniform sampler2D tH, tPal, tVent; uniform vec2 uAnneau, uCentreMaille; uniform float uDescente, uBande; uniform mat4 uOmbreM;
 varying vec3 vW; varying float vProf; varying vec4 vOm;
 varying vec3 vOmbre, vLum, vEncre, vTrait, vCiel, vReg, vHerbe; varying vec2 vVent; varying float vDens;
 vec3 pal(float c, float s) { return texture2D(tPal, vec2((c + 0.5) / 7.0, s)).rgb; }
 void main() {
   vec3 p = position; p.x += uCentreMaille.x; p.z -= uCentreMaille.y;
-  vec2 uv = vec2(p.x, -p.z) / uMonde;
+  vec2 uv = vec2(p.x, -p.z) / uAnneau;
+  float sv = -p.z / uBande;
   p.y = max(texture2D(tH, uv).r, 0.0) - uDescente;
   vW = vec3(p.x, p.y, -p.z);
   // La palette et le vent varient lentement : au sommet plutôt qu'au pixel, c'est six lectures de moins.
-  vOmbre = pal(0.0, uv.y); vLum = pal(1.0, uv.y); vEncre = pal(2.0, uv.y); vTrait = pal(3.0, uv.y); vCiel = pal(4.0, uv.y); vReg = pal(5.0, uv.y); vHerbe = pal(6.0, uv.y);
-  vDens = texture2D(tPal, vec2(5.5 / 7.0, uv.y)).a;
+  vOmbre = pal(0.0, sv); vLum = pal(1.0, sv); vEncre = pal(2.0, sv); vTrait = pal(3.0, sv); vCiel = pal(4.0, sv); vReg = pal(5.0, sv); vHerbe = pal(6.0, sv);
+  vDens = texture2D(tPal, vec2(5.5 / 7.0, sv)).a;
   vVent = texture2D(tVent, uv).xy;
   vOm = uOmbreM * vec4(p, 1.0);
   vec4 mv = modelViewMatrix * vec4(p, 1.0);
@@ -56,15 +57,15 @@ float lignes(float v, float demi) {
 }
 
 void main() {
-  vec2 uv = vW.xz / uMonde;
+  vec2 uv = vW.xz / uAnneau;
   vec3 ombre = vOmbre, lum = vLum, encre = vEncre, trait = vTrait, ciel = vCiel;
   float pas = vReg.r * 10.0, rides = vReg.g, grain = vReg.b;
 
   float h = hCub(uv);
   float det = (bruit(vW.xz * 0.11) - 0.5) * 0.8 + (bruit(vW.xz * 0.37) - 0.5) * 0.22;
   float e = 2.0;
-  float hx = texture2D(tH, (vW.xz + vec2(e, 0.0)) / uMonde).r - texture2D(tH, (vW.xz - vec2(e, 0.0)) / uMonde).r;
-  float hz = texture2D(tH, (vW.xz + vec2(0.0, e)) / uMonde).r - texture2D(tH, (vW.xz - vec2(0.0, e)) / uMonde).r;
+  float hx = texture2D(tH, (vW.xz + vec2(e, 0.0)) / uAnneau).r - texture2D(tH, (vW.xz - vec2(e, 0.0)) / uAnneau).r;
+  float hz = texture2D(tH, (vW.xz + vec2(0.0, e)) / uAnneau).r - texture2D(tH, (vW.xz - vec2(0.0, e)) / uAnneau).r;
   float pres = smoothstep(190.0, 34.0, vProf);
 
   // Les rides du vent, en travers de lui. Elles bossellent la lumière, et on les voit encore de haut.
@@ -218,7 +219,7 @@ void main() {
   }
 
   // Le bout du monde ne se voit pas de loin : il se défait dans le ciel.
-  col = mix(col, horizon(), smoothstep(uMonde.y - 340.0, uMonde.y - 170.0, vW.z));
+  col = mix(col, horizon(), smoothstep(uBande - 340.0, uBande - 170.0, vW.z));
 
   // Le lointain se perd dans le ciel.
   col = mix(col, brume(vW), smoothstep(uBrouillard * 0.5, uBrouillard * 1.25, vProf));
@@ -232,7 +233,7 @@ export class Terrain {
     this.pasLoin = 32;
     this.u = {
       tH: { value: tex.tH }, tPal: { value: tex.tPal }, tTrace: { value: tTrace }, tBruit: { value: tBruit }, tVent: { value: tex.tV }, tL: { value: tex.tL },
-      uMonde: { value: new THREE.Vector2(monde.W, monde.L) },
+      uAnneau: { value: new THREE.Vector2(monde.W, monde.anneau) }, uBande: { value: monde.L },
       uTexel: { value: new THREE.Vector2(1 / monde.nx, 1 / monde.ns) },
       uCentreMaille: { value: new THREE.Vector2() }, uCentreTrace: { value: new THREE.Vector2() },
       uDescente: { value: 0 },

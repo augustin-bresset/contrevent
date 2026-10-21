@@ -1,13 +1,11 @@
 // La bande du monde, vue d'un coup : d'ouest en est, comme dans le roman. L'amont est à droite.
-import { MONDE } from './monde/contrees.js';
-
 const hex = (h) => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
 
 export class Carte {
   constructor(monde) {
     this.monde = monde;
     this.cv = document.getElementById('bande');
-    const W = (this.W = 1800), H = (this.H = Math.round(W * MONDE.W / MONDE.L));
+    const W = (this.W = 1800), H = (this.H = 130);
     this.cv.width = W; this.cv.height = H;
     this.fond = document.createElement('canvas'); this.fond.width = W; this.fond.height = H;
     const x = this.fond.getContext('2d'), im = x.createImageData(W, H), { L, W: LW } = monde;
@@ -17,7 +15,7 @@ export class Carte {
       while (ic < cs.length - 1 && s >= cs[ic + 1].s) ic++;
       const c = cs[ic];
       for (let j = 0; j < H; j++) {
-        const p = (j + 0.5) / H * LW, h = monde.h(p, s), hx = monde.h(p + 12, s) - monde.h(p - 12, s), hs = monde.h(p, s + 12) - monde.h(p, s - 12);
+        const p = (j + 0.5) / H * LW, h = monde.hLoin(p, s), hx = monde.hLoin(p + 24, s) - monde.hLoin(p - 24, s), hs = monde.hLoin(p, s + 24) - monde.hLoin(p, s - 24);
         const t = Math.max(0, Math.min(1, 0.68 + (-hx * 0.6 - hs * 0.42) / 24));
         const k = (j * W + i) * 4, m = Math.floor(Math.max(0, h) / 12) % 2 ? 0.05 : 0;
         for (let q = 0; q < 3; q++) im.data[k + q] = c.o[q] + (c.l[q] - c.o[q]) * t - (c.l[q] - c.e[q]) * m;
@@ -27,7 +25,7 @@ export class Carte {
     x.putImageData(im, 0, 0);
     const lieux = document.getElementById('lieux');
     lieux.innerHTML = monde.lieux.filter((l) => !l.sansMonument).map((l, i) =>
-      `<li class="${i % 2 ? 'b' : 'h'}" style="left:${(l.s / L * 100).toFixed(2)}%"><span>${l.nom}</span></li>`).join('');
+      `<li class="${i % 2 ? 'b' : 'h'}${l.s / L < 0.04 ? ' debut' : ''}" style="left:${(l.s / L * 100).toFixed(2)}%"><span>${l.nom}</span></li>`).join('');
   }
   // À la fin, le fil se redéroule d'un bout à l'autre de la bande.
   derouler(fil, x, s) {

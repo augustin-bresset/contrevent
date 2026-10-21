@@ -6,7 +6,7 @@ import * as THREE from 'three';
 const LARG = 1800, LONG = 40;
 
 export class Filets {
-  constructor(renderer, lignes, tH, tPal, uMonde) {
+  constructor(renderer, lignes, tH, tPal, uAnneau, uBande) {
     this.r = renderer; this.lignes = lignes; this.tete = 0; this.acc = 0;
     this.hist = new THREE.WebGLRenderTarget(LARG, LONG, { type: THREE.FloatType, format: THREE.RGBAFormat, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, depthBuffer: false, generateMipmaps: false });
     this.uE = { tPos: { value: null }, uCote: { value: lignes.cote }, uLigne: { value: 0 } };
@@ -30,17 +30,17 @@ export class Filets {
     const id = new Float32Array(LARG); for (let i = 0; i < LARG; i++) id[i] = i;
     g.setAttribute('iId', new THREE.InstancedBufferAttribute(id, 1)); g.instanceCount = LARG;
     this.u = {
-      tHist: { value: this.hist.texture }, tH: { value: tH }, tPal: { value: tPal }, uMonde: { value: uMonde }, uTete: { value: 0 }, uFrac: { value: 0 },
+      tHist: { value: this.hist.texture }, tH: { value: tH }, tPal: { value: tPal }, uAnneau: { value: uAnneau }, uBande: { value: uBande }, uTete: { value: 0 }, uFrac: { value: 0 },
       uEcran: { value: new THREE.Vector2(1, 1) }, uLarg: { value: 1.4 }, uChaud: { value: 0 }, uNuit: { value: 0 }, uForceF: { value: 1 },
     };
     this.mesh = new THREE.Mesh(g, new THREE.ShaderMaterial({
       uniforms: this.u, transparent: true, depthWrite: false, side: THREE.DoubleSide, glslVersion: THREE.GLSL3,
       vertexShader: /* glsl */`
         precision highp float; precision highp int;
-        uniform sampler2D tHist, tH, tPal; uniform vec2 uMonde, uEcran; uniform int uTete; uniform float uLarg, uFrac;
+        uniform sampler2D tHist, tH, tPal; uniform vec2 uAnneau, uEcran; uniform int uTete; uniform float uLarg, uFrac, uBande;
         in float aT, aC, iId; out float vA; out vec3 vC; out float vC2;
         vec4 lit(int i) { return texelFetch(tHist, ivec2(int(iId), (uTete - i + ${LONG * 4}) % ${LONG}), 0); }
-        vec3 monte(vec2 p) { return vec3(p.x, max(texture(tH, p / uMonde).r, 0.0) + 0.3, -p.y); }
+        vec3 monte(vec2 p) { return vec3(p.x, max(texture(tH, p / uAnneau).r, 0.0) + 0.3, -p.y); }
         void main() {
           int i = int(aT * ${(LONG - 3).toFixed(1)} + 0.5);
           vec4 z = lit(max(i - 1, 0)), a = lit(i), b = lit(i + 1), c = lit(i + 2);
@@ -57,7 +57,7 @@ export class Filets {
           gl_Position.z -= 0.00035 * ca.w;
           vC2 = aC;
           vA = saut > 0.5 ? 0.0 : pow(q, 0.7) * smoothstep(0.0, 0.5, length(a.xy - a.zw) * 6.0);
-          vC = texture(tPal, vec2(3.5 / 7.0, pa.y / uMonde.y)).rgb;
+          vC = texture(tPal, vec2(3.5 / 7.0, pa.y / uBande)).rgb;
         }`,
       fragmentShader: /* glsl */`
         precision highp float; uniform float uChaud, uNuit, uForceF; in float vA, vC2; in vec3 vC; out vec4 o;

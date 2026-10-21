@@ -31,7 +31,7 @@ float arche(vec2 q) {                                   // la distance à une ba
   return min(rect, length(q - vec2(0.0, 0.15)) - 0.17);
 }
 void main() {
-  float sv = vW.z / uMonde.y, m = floor(vMat + 0.5);
+  float sv = vW.z / uBande, m = floor(vMat + 0.5);
   vec3 ombre = palette(0, sv), lum = palette(1, sv), encre = palette(2, sv);
   vec3 n = normalize(vN), P = vec3(vW.x, vW.y, -vW.z), V = normalize(P - cameraPosition);
   vec3 base = vTon.x < 0.0 ? mix(lum, ombre, 0.14) : vTon;
@@ -334,7 +334,8 @@ export class Monuments {
       const anim = [];
       const geo = mergeGeometries(f(alea(monde.graine + l.s | 0), anim), false);
       const m = new THREE.Mesh(geo, mat);
-      m.position.set(l.x, Math.max(0, monde.h(l.x, l.s)), -l.s);
+      // Le sol a été fait pour lui : il n'y a qu'à lire l'altitude de son ancre.
+      m.position.set(l.x, Math.max(0, l.ancre?.y ?? 0), -l.s);
       m.scale.setScalar(ECHELLE.monument);
       m.visible = false; m.renderOrder = 0; m.layers.enable(1);
       for (const a of anim) {

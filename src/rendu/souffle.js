@@ -65,7 +65,7 @@ export class Souffle {
         void main() {
           vec4 e = texture2D(tGrain, aRef);
           vec2 p = e.xz; float id = e.w;
-          float h = max(texture2D(tH, p / uMonde).r, 0.0);
+          float h = max(texture2D(tH, p / uAnneau).r, 0.0);
           vec3 w0 = vec3(p.x, h + e.y, -p.y);
           vec2 w = ventIci(p);
           // Un grain sur sept est un long filet de soie ; les autres, des points d'air presque ronds.
