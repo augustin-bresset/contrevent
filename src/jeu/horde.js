@@ -76,7 +76,7 @@ export class Horde {
       if (this.souffle <= 0) vmax *= 0.45;
       const v = vmax * (1 - poussee);
       vx = dx * v; vs = ds * v;
-      effort = 0.0018 + contre * contre * R.effortVent * expoP + monte * 0.006 + (cmd.serre ? R.effortBloc : 0);
+      effort = R.effortMarche + contre * contre * R.effortVent * expoP + monte * R.effortPente + (cmd.serre ? R.effortBloc : 0);
       this.immobile = 0;
       this.pas += dt * 8;
     } else {
@@ -85,7 +85,9 @@ export class Horde {
     }
     // Quand le vent dépasse ce que les corps tiennent, il reprend du terrain.
     const excès = Math.max(0, f * f * R.prise * expoP - 1);
-    vx += w.x * excès * 2.4; vs += w.s * excès * 2.4;
+    // En bloc, on plie sans reculer : la rafale vole des pas, pas des heures de marche.
+    const recule = excès * mix(2.4, 0.5, this.serre);
+    vx += w.x * recule; vs += w.s * recule;
     if (cmd.vitesseMax) { const v = Math.hypot(vx, vs); if (v > cmd.vitesseMax) { vx *= cmd.vitesseMax / v; vs *= cmd.vitesseMax / v; } }
 
     // Ce qui est trop raide ne se franchit pas : on tâte le sol un pas devant et on contourne.
@@ -143,7 +145,9 @@ export class Horde {
       }
       const x0 = m.x, s0 = m.s;
       const pris = f * f * m.expo * expoP;
-      if (!m.emporte && pris > R.seuilEmporte && m.id !== 'golgoth' && Math.random() < dt * 0.5) m.emporte = true;
+      // En bloc, on tient presque toujours : c'est ce qui rend le bloc vital, et il tient de moins en moins vers l'amont.
+      const lache = mix(0.5, mix(R.emporteBloc, R.emporteBlocFin, (this.s / monde.L) ** 2), this.serre);
+      if (!m.emporte && pris > R.seuilEmporte && m.id !== 'golgoth' && Math.random() < dt * lache) m.emporte = true;
       if (m.emporte) {
         m.x += dirW[0] * f * 11 * dt; m.s += dirW[1] * f * 11 * dt;
         const d = Math.hypot(m.x - this.x, m.s - this.s);

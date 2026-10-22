@@ -5,7 +5,7 @@ import '@fontsource/spectral/300-italic.css';
 import '@fontsource/spectral/400.css';
 import './style.css';
 import { Monde } from './monde/monde.js';
-import { FORMES, AIRS } from './monde/contrees.js';
+import { MONDE, SDEPART, FORMES, AIRS } from './monde/contrees.js';
 import { Lignes } from './rendu/lignes.js';
 import { Terrain } from './rendu/terrain.js';
 import { Post } from './rendu/post.js';
@@ -35,7 +35,7 @@ import { NB_LENTILLES } from './rendu/post.js';
 import { Vent } from './jeu/vent.js';
 import { Horde, formeDuVent } from './jeu/horde.js';
 import { Evenements } from './jeu/evenements.js';
-import { CAMP } from './jeu/textes.js';
+import { Camp } from './jeu/camp.js';
 import { R } from './jeu/reglages.js';
 import { Audio } from './audio.js';
 import { Hud } from './hud.js';
@@ -44,7 +44,7 @@ import FabriqueWorker from './monde/fabrique.worker.js?worker&inline';
 
 const $ = (id) => document.getElementById(id);
 const params = new URLSearchParams(location.search);
-const CLE = 'contrevent-camp';
+const CLE = 'contrevent-marche';
 const sauvegarde = (() => { try { return params.has('graine') || params.has('s') ? null : JSON.parse(localStorage.getItem(CLE)); } catch { return null; } })();
 const graine = +(params.get('graine') || sauvegarde?.graine || Math.floor(Math.random() * 1e6));
 const calme = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -62,19 +62,35 @@ try {
 }
 renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
 
-const mondeData = await new Promise((ok, ko) => {
-  const w = new FabriqueWorker();
-  w.onmessage = (e) => { ok(e.data); w.terminate(); };
-  w.onerror = ko;
-  w.postMessage({ graine });
+// Le monde vient de l'atelier, par tranches. On commence dès que le sol autour de la Horde existe ;
+// le reste arrive derrière la brume, qui recule à mesure.
+const sDepart = sauvegarde?.s ?? (+params.get('s') > 0 ? +params.get('s') * MONDE.L : SDEPART);
+const atelier = new FabriqueWorker(), arrivees = [];
+let reveil = null;
+const monde = await new Promise((ok, ko) => {
+  atelier.onerror = ko;
+  atelier.onmessage = (e) => {
+    if (e.data.esquisse) ok(new Monde(e.data.esquisse));
+    else { arrivees.push(e.data); reveil?.(); }
+  };
+  atelier.postMessage({ graine });
 });
-const monde = new Monde(mondeData);
-const tex = monde.textures();
-const uMonde = new THREE.Vector2(monde.W, monde.L);
+const reclamer = (s) => atelier.postMessage({ file: monde.manquantes(s) });
+function deballer() {
+  const t = arrivees.shift();
+  if (t && Math.abs(t.k - monde.k) <= (MONDE.nbTranches - 1) / 2) monde.poser(t);
+}
+reclamer(sDepart);
+await new Promise((ok) => {
+  reveil = () => { while (arrivees.length) deballer(); if (monde.vu(sDepart) >= 650) { reveil = null; ok(); } };
+});
+const tex = monde.creerTextures(renderer);
+monde.toutMonter();
+const uAnneau = new THREE.Vector2(monde.W, monde.anneau);
 
 const tBruit = textureBruit();
 const titre = new Titre(renderer, tBruit);
-const lignes = new Lignes(renderer, tex.tV, uMonde, { cote: 165, res: 1536 });
+const lignes = new Lignes(renderer, tex.tV, uAnneau, { cote: 165, res: 1536 });
 const terrain = new Terrain(monde, tex, lignes.texture, tBruit);
 const post = new Post(renderer);
 const scene = new THREE.Scene();
@@ -86,9 +102,9 @@ const semis = new Semis(monde, terrain.u); scene.add(semis.groupe);
 const souffle = new Souffle(renderer, lignes, tex.tH); scene.add(souffle.mesh);
 const oiseaux = new Oiseaux(); scene.add(oiseaux.mesh);
 const jalons = new Jalons(monde); scene.add(jalons.groupe);
-const filets = new Filets(renderer, lignes, tex.tH, tex.tPal, uMonde); scene.add(filets.mesh);
+const filets = new Filets(renderer, lignes, tex.tH, tex.tPal, uAnneau, monde.L); scene.add(filets.mesh);
 const herbe = new Herbe(terrain.u); scene.add(herbe.mesh);
-const tornades = new Tornades(tex.tH, tex.tPal, uMonde); scene.add(tornades.mesh);
+const tornades = new Tornades(tex.tH, tex.tPal, uAnneau, monde.L); scene.add(tornades.mesh);
 const eclats = new Eclats(); scene.add(eclats.mesh);
 const front = new Front(terrain.u, monde.W); scene.add(front.groupe);
 const nuages = new Nuages(terrain.u); scene.add(nuages.mesh);
@@ -97,7 +113,7 @@ const figures = new Figures(23, { echelle: 0.56, reflets: true }); scene.add(fig
 const assaillants = new Figures(14, { echelle: 0.58 }); scene.add(assaillants.groupe);
 const monuments = new Monuments(monde, terrain.u); scene.add(monuments.groupe);
 const navire = new Navire(); scene.add(navire.groupe);
-const poussiere = new Poussiere(lignes, tex.tH, uMonde); scene.add(poussiere.mesh);
+const poussiere = new Poussiere(lignes, tex.tH, uAnneau); scene.add(poussiere.mesh);
 const fx = new Coups(); scene.add(fx.mesh);
 const foudre = new Foudre(); scene.add(foudre.mesh);
 
@@ -122,8 +138,7 @@ camera.layers.enable(1);
 const vent = new Vent(monde);
 const rafales = new Rafales(monde, vent); scene.add(rafales.mesh);
 const fDep = +(params.get('s') || 0);
-const sDep = sauvegarde?.s ?? (fDep ? fDep * monde.L : 330);
-const horde = new Horde(monde, vent, sauvegarde?.x ?? monde.xRoute(sDep), sDep);
+const horde = new Horde(monde, vent, sauvegarde?.x ?? monde.xRoute(sDepart), sDepart);
 for (const m of horde.membres) m.col = new THREE.Color(m.ton).convertLinearToSRGB();
 const hud = new Hud(), audio = new Audio();
 const carte = new Carte(monde);
@@ -162,6 +177,7 @@ horde.onPas = (m) => {
   }
 };
 const ev = new Evenements(j);
+const camp = new Camp(j, () => { if (!etapes.vivres) { etapes.vivres = true; hud.aide('Chaque camp consomme une ration. Sans repas, on ne récupère qu’à moitié.', 9); } });
 if (sauvegarde) {
   for (const id of sauvegarde.morts) { const m = horde.membres.find((q) => q.id === id); if (m) m.vivant = false; }
   horde.souffle = sauvegarde.souffle ?? 1;
@@ -192,7 +208,7 @@ function changerAir(c) {
 }
 
 let etat = 'titre';   // titre, marche, pause, choix, fin
-let accel = 1, vitesseJeu = 1, ralenti = 1, nuit = 0, feu = 0, reve = 0, blanc = 0, tempsImmobile = 0, parole = 0;
+let accel = 1, vitesseJeu = 1, ralenti = 1, nuit = 0, feu = 0, reve = 0, blanc = 0;
 let zoom = 0.78, zoomV = 0.78;
 let camX = horde.x, camS = horde.s + 30, camH = Math.max(0, monde.h(horde.x, horde.s)), camAv = 0;
 const cmd = { dx: 0, ds: 1, actif: false, serre: false, vitesseMax: 0 };
@@ -217,7 +233,7 @@ function versMonde(cx, cy) {
   for (let i = 0; i < 9; i++) { const m = (t0 + t1) / 2; if (sol(m) > 0) t0 = m; else t1 = m; }
   return { x: o.x + d.x * t1, s: -(o.z + d.z * t1) };
 }
-function changerTemps() { accel = accel >= 8 ? 1 : accel * 2; }
+function changerTemps() { accel = accel >= 16 ? 1 : accel * 2; }
 function basculerBloc(v = !bloc) {
   bloc = v; hud.bloc(bloc); $('bloc').setAttribute('aria-pressed', bloc);
 }
@@ -447,35 +463,7 @@ function majJeu(dt) {
   fil.ajouter(horde.x, horde.s);
   aides();
 
-  // Le camp : l'immobilité à l'abri.
-  const abrite = horde.abri > 0.4 || horde.force < 0.5;
-  tempsImmobile = cmd.actif || !abrite ? 0 : tempsImmobile + dt;
-  // On ne campe que fatigué : une Horde fraîche attend sans que la nuit tombe.
-  const camper = tempsImmobile > 2.4 && !ev.actifs() && (j.camp || horde.souffle < 0.8);
-  if (camper && !j.camp) {
-    j.camp = true; parole = 3.5;
-    // Le repas : il faut en avoir un pour vraiment récupérer.
-    j.repas = j.vivres > 0;
-    if (j.repas) { j.vivres--; hud.vivres(j.vivres); }
-    else hud.dire(horde.vit('alme') ? 'alme' : 'sov', 'Plus rien à manger. On dort le ventre vide, et ça ne suffira pas.');
-    if (!etapes.vivres) { etapes.vivres = true; hud.aide('Chaque camp consomme une ration. Sans repas, on ne récupère qu’à moitié.', 9); }
-    if (horde.souffle < 0.92) j.sauver();
-    ev.campAttaque();
-  }
-  if (!camper) j.camp = false;
-  if (j.camp) {
-    const soin = (j.repas ? R.soinRepas : R.soinJeune) * (horde.vit('alme') ? 1 : 0.65) * (horde.vit('callirhoe') ? 1 : 0.65);
-    const plafond = j.repas ? 1 : R.plafondSansRepas;
-    if (horde.souffle < plafond) horde.souffle = Math.min(plafond, horde.souffle + soin * dt);
-    parole -= dt;
-    if (parole <= 0 && horde.vivants().length) {
-      parole = 15;
-      const l = CAMP.filter(([id]) => horde.vit(id)), q = l[Math.floor(Math.random() * l.length)];
-      if (q) hud.dire(q[0], q[1]);
-    }
-    if (horde.souffle >= 1 && tempsImmobile > 40) j.sauver();
-  }
-
+  camp.maj(dt, cmd.actif, ev);
   horde.veillee = vers(horde.veillee, j.camp ? 1 : 0, dt, 1.4);
   lignes.poserPas(horde.membres);
 
@@ -498,7 +486,8 @@ function poserUniformes(dt) {
   const n = vent.navire;
   u.uNavireO.value.set(n.x + 12, n.s - 40, 118, n.p > 0 ? Math.min(1, n.p * 1.5) : 0);
   const eR = lisseR();
-  u.uBrouillard.value = mix(1500 * zoom, 2400, eR);
+  // La brume ne s'ouvre jamais au-delà de ce qui existe : le joueur ne voit pas le monde se construire.
+  u.uBrouillard.value = Math.min(mix(1500 * zoom, 2400, eR), 2400, monde.vu(horde.s) / 1.25);
   u.uSv.value = horde.s / monde.L;
   u.uRemousT.value = lignes.commun.uRemous.value;
 
@@ -627,7 +616,11 @@ function boucle(now) {
     regardReste -= dt;
     if (regardReste <= 0 || (!regardLibre && ev.actifs()) || (reve > 0.6)) quitterRegard();
   }
-  monuments.maj(horde.s, 2400, dt);
+  // Le monde suit la Horde : une tranche par image au plus, fabriquée dans l'atelier.
+  if (Math.floor(horde.s / MONDE.tranche) !== monde.k) reclamer(horde.s);
+  deballer(); monde.monter();
+
+  monuments.maj(horde.s, 3000, dt);
   semis.maj(horde.x, horde.s + 80);
   poserUniformes(dt);
   lignes.uSim.uVitesse.value = 26;
@@ -717,7 +710,7 @@ $('pied').hidden = false;
 // Le titre se lit à hauteur de Horde, face à la Falaise ; le départ emportera la caméra jusqu'au ciel.
 if (!params.has('direct')) {
   const a = monde.lieux[0];
-  visee = { x: a.x, s: a.s - 8, y: Math.max(0, monde.h(a.x, a.s)) + 96, recul: 230, lat: -60, haut: 9 };
+  visee = { x: a.x, s: a.s - 8, y: Math.max(0, monde.h(a.x, a.s)) + 96, recul: 90, lat: -60, haut: 9 };
   regard = 1; regardCible = 1; regardReste = Infinity; regardLibre = false;
 }
 addEventListener('keydown', function entree(e) {
@@ -728,6 +721,6 @@ requestAnimationFrame(boucle);
 
 if (params.has('debug')) window.__j = {
   j, horde, vent, ev, monde, get etat() { return etat; }, renderer, post,
-  vite(v) { vitesseJeu = v; }, camera, versMonde, herbe, nuages, rafales, tornades, poussiere, semis, lignes, terrain, souffle, eclats, scene, tp(f) { horde.s = f * monde.L; horde.x = monde.xRoute(horde.s); camX = horde.x; camS = horde.s + 34; fil.dx = horde.x; fil.ds = horde.s; ev.plan = ev.plan.filter((p) => p.f > f); },
+  vite(v) { vitesseJeu = v; }, camera, versMonde, herbe, nuages, rafales, tornades, poussiere, semis, lignes, terrain, souffle, eclats, scene, reclamer, tp(f) { horde.s = f * monde.L; horde.x = monde.xRoute(horde.s); reclamer(horde.s); camX = horde.x; camS = horde.s + 34; fil.dx = horde.x; fil.ds = horde.s; ev.plan = ev.plan.filter((p) => p.f > f); },
   mener(x, s) { chemin = [{ x, s }]; }, arret() { chemin = []; }, serre(v) { if (v !== bloc) basculerBloc(v); }, get qualite() { return niveau; }, figerQualite() { qualiteFigee = true; }, appliquerNiveau, regarder, basculerRegard, get chemin() { return chemin; },
 };

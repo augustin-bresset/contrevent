@@ -9,35 +9,31 @@ const REPLIQUES = [5, 13, 21, 28, 35];
 // Où poser les yeux en arrivant : la hauteur du regard sur le monument. Sans monument, l'horizon.
 const VISEES = { portchoon: 26, chawondasee: 20, alticcio: 76, urle: 58, egine: 14, boban: 14, brakauer: 40, krafla: 165 };
 
+const mix = (a, b, t) => a + (b - a) * t;
+
+// Les rendez-vous du roman sont fixes. Entre eux, la route se durcit toute seule : les furvents et la Poursuite
+// se rapprochent à mesure qu'on remonte, jusqu'à ne plus laisser de répit au bout du monde.
 const nouveauPlan = (r) => {
-  const j = (f, e = 0.008) => f + (r() - 0.5) * e;
+  const j = (f, e = 0.004) => f + (r() - 0.5) * e;
   const p = [
-    { f: j(0.088), t: 'furvent', m: 2.2, premier: true },
+    { f: j(0.06), t: 'furvent', m: 2.2, premier: true },
     { f: j(0.124), t: 'silene' },
-    { f: j(0.158), t: 'furvent', m: 2.6 },
     { f: j(0.178), t: 'navire' },
-    { f: j(0.21), t: 'poursuite', n: 6 },
     { f: j(0.248), t: 'corroyeur' },
-    { f: j(0.272), t: 'furvent', m: 2.8 },
     { f: j(0.342), t: 'chrone', k: 'eau' },
-    { f: j(0.372), t: 'poursuite', n: 8 },
-    { f: j(0.398), t: 'furvent', m: 3 },
     { f: j(0.438), t: 'chrone', k: 'temps' },
-    { f: j(0.47), t: 'furvent', m: 3 },
     { f: j(0.518), t: 'poursuite', n: 10, chef: 'Maskhar Lek' },
-    { f: j(0.565), t: 'furvent', m: 3 },
-    { f: j(0.635), t: 'furvent', m: 3.2 },
-    { f: j(0.68), t: 'poursuite', n: 12, pv: 2 },
     { f: j(0.722), t: 'chrone', k: 'vera' },
-    { f: j(0.752), t: 'furvent', m: 3.4 },
-    { f: j(0.795), t: 'poursuite', n: 14, pv: 2 },
-    { f: j(0.84), t: 'furvent', m: 3.2 },
-    { f: j(0.868), t: 'furvent', m: 3.2 },
-    { f: j(0.9), t: 'poursuite', n: 14, pv: 2 },
-    { f: j(0.912), t: 'furvent', m: 3.4 },
-    { f: j(0.945), t: 'furvent', m: 3.4 },
   ];
-  for (const [a, b, n] of [[0.17, 0.28, 2], [0.32, 0.44, 4], [0.665, 0.77, 4], [0.86, 0.92, 3]])
+  for (let f = 0.1; f < 0.955;) {
+    p.push({ f, t: 'furvent', m: mix(2.3, 3.7, f) });
+    f += mix(R.furventTous, R.furventFin, f * f) * (0.8 + 0.4 * r());
+  }
+  for (let f = 0.15; f < 0.95;) {
+    if (Math.abs(f - 0.518) > 0.02) p.push({ f, t: 'poursuite', n: Math.round(mix(5, 11, f)), pv: f > 0.85 ? 2 : 1 });
+    f += mix(R.poursuiteTous, R.poursuiteFin, f * f) * (0.8 + 0.4 * r());
+  }
+  for (const [a, b, n] of [[0.17, 0.28, 3], [0.32, 0.44, 5], [0.665, 0.77, 6], [0.88, 0.93, 4]])
     for (let i = 0; i < n; i++) p.push({ f: a + r() * (b - a), t: 'chrone', k: 'errant' });
   return p.sort((a, b) => a.f - b.f);
 };
@@ -81,7 +77,7 @@ export class Evenements {
       }
       setTimeout(() => { j.hud.banniere(l.nom, l.sous); j.audio.decouverte(); }, l.id === 'aberlaas' ? 0 : 2400);
       (A_LIEU[l.id] || []).forEach(([id, t], i) => setTimeout(() => this.dire(id, t), 4400 + i * 6200));
-      const rations = { portchoon: 4, chawondasee: 4, alticcio: 5, boban: 5 }[l.id];
+      const rations = R.rations[l.id];
       if (rations) { j.ajouterVivres(rations); setTimeout(() => this.dire('steppe', `De quoi tenir : ${rations} rations de plus.`), 9000); }
       if (l.id === 'boban') { horde.souffle = 1; j.sauver(); }
       if (l.id === 'krafla') this.krafla(l);
@@ -100,7 +96,8 @@ export class Evenements {
     // Aoi cueille, Larco chasse : tant qu'ils vivent, le sac se remplit un peu.
     if (horde.s > (this.cueillette ??= horde.s + R.cueilletteTous)) {
       this.cueillette = horde.s + R.cueilletteTous;
-      if (horde.vit('aoi') || horde.vit('larco')) { j.ajouterVivres(1); this.dire(horde.vit('aoi') ? 'aoi' : 'larco', 'Trouvé de quoi manger. Une ration.'); }
+      // Plus rien ne pousse au-delà du Scóverr : ce qu'on a dans le sac doit tenir jusqu'au bout.
+      if (f < 0.87 && (horde.vit('aoi') || horde.vit('larco'))) { j.ajouterVivres(1); this.dire(horde.vit('aoi') ? 'aoi' : 'larco', 'Trouvé de quoi manger. Une ration.'); }
     }
 
     this.babil -= dt;
@@ -163,7 +160,7 @@ export class Evenements {
     T.rav = (T.rav ?? 1) - dt;
     if (ici > 0.6 && T.rav <= 0 && !T.premier) {
       const h = j.horde;
-      T.rav = h.serre > 0.8 ? R.ravageBloc : R.ravageLibre;
+      T.rav = h.serre > 0.8 ? mix(R.ravageBloc, R.ravageBlocFin, (h.s / j.monde.L) ** 2) : R.ravageLibre;
       if (h.abri < 0.42) {
         const q = h.membres.filter((m) => m.vivant && !m.emporte && m.id !== 'golgoth');
         const m = q[Math.floor(this.r() * q.length)];
@@ -267,17 +264,17 @@ export class Evenements {
   // La nuit n'arrête pas la Poursuite.
   campAttaque() {
     const { j } = this, f = j.horde.s / j.monde.L;
-    if (f < 0.11 || this.r() > R.embuscade) return false;
+    if (f < 0.11 || this.r() > mix(R.embuscade, R.embuscadeFin, f * f)) return false;
     setTimeout(() => {
       if (!j.camp) return;
       this.dire('erg', 'Debout ! Ils sont sur le camp.');
-      this.apparaitre(4 + Math.floor(f * 8), { pv: f > 0.6 ? 2 : 1 });
+      this.apparaitre(3 + Math.floor(f * 4));
       j.audio.alerte();
     }, 3500 + this.r() * 4000);
     return true;
   }
 
-  krafla(l) { const r = { x: l.x, s: l.s, r: 92, f: 1.9 }; this.j.vent.remous.push(r); this.colonne = r; }
+  krafla(l) { const r = { x: l.x, s: l.s, r: 92, f: 1.1 }; this.j.vent.remous.push(r); this.colonne = r; }
 
   // --- La Poursuite ---
   apparaitre(n, opts = {}) {
@@ -301,7 +298,7 @@ export class Evenements {
   majEnnemis(dt) {
     const { j } = this, h = j.horde;
     let proche = 1e9;
-    this.ecartParade -= dt; this.lameDans = (this.lameDans || 0) - dt;
+    this.ecartParade -= dt; this.ecartFrappe = (this.ecartFrappe || 0) - dt; this.lameDans = (this.lameDans || 0) - dt;
     for (const e of this.ennemis) {
       const dx = h.x - e.x, ds = h.s - e.s, d = Math.hypot(dx, ds) || 1;
       proche = Math.min(proche, d);
@@ -315,11 +312,12 @@ export class Evenements {
         if (erg && erg.vivant && this.ecartParade <= 0) {
           this.ecartParade = R.paradeErg; e.pv -= 1; e.recul = 0.7;
           j.fx.ajouter(erg.x, erg.y, erg.s, e.x, e.y, e.s); j.audio.coup(); j.eclats.gerbe(e.x, e.y, e.s);
-        } else if (d < 4) {
-          // Ils frappent, reculent, et reviennent tant qu'on ne les abat pas.
+        } else if (d < 4 && this.ecartFrappe <= 0) {
+          // Ils frappent, reculent, et reviennent tant qu'on ne les abat pas. Plus la fin approche, moins ils laissent de temps.
           const cible = h.fauchee('poursuite'); e.recul = 1.4;
+          this.ecartFrappe = mix(R.frappe, R.frappeFin, h.s / j.monde.L);
           if (cible) j.secousse(0.5);
-        }
+        } else if (d < 4) e.recul = 0.5;
       }
     }
     if (this.ennemis.some((e) => e.pv <= 0)) {
