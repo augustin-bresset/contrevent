@@ -1,29 +1,32 @@
 // Vérifie qu'un monde se traverse à pied : parcours en largeur avec la règle de pente de la Horde.
+// Le relief se lit tranche par tranche, on n'en garde que quelques-unes à la fois.
 // node outils/passage.mjs [nb de graines]
-import { fabriquerMonde } from '../src/monde/fabrique.js';
-import { MONDE } from '../src/monde/contrees.js';
+import { creerFabrique } from '../src/monde/fabrique.js';
+import { MONDE, SDEPART } from '../src/monde/contrees.js';
 
-const n = +(process.argv[2] || 12), PAS = 1.6, MAXI = 1.7 * PAS;
+const n = +(process.argv[2] || 4), PAS = 1.6, MAXI = 1.7 * PAS, { W, L, pas, tranche: T } = MONDE;
+const nx = W / pas, nt = T / pas;
 let echecs = 0;
 for (let g = 0; g < n; g++) {
   const graine = g === 0 ? 34 : g === 1 ? 2026 : g * 7919;
-  const m = fabriquerMonde(graine), { W, L, pas } = MONDE;
+  const F = creerFabrique(graine), route = F.esquisse.route;
+  const H = (k) => F.relief(k);
   const h = (x, s) => {
-    const fx = Math.max(0, Math.min(m.nx - 1.001, x / pas)), fs = Math.max(0, Math.min(m.ns - 1.001, s / pas));
-    const i = fx | 0, j = fs | 0, a = fx - i, b = fs - j, k = j * m.nx + i, H = m.hauteur;
-    return Math.max(0, (H[k] * (1 - a) + H[k + 1] * a) * (1 - b) + (H[k + m.nx] * (1 - a) + H[k + m.nx + 1] * a) * b);
+    const fx = Math.max(0, Math.min(nx - 1.001, x / pas - 0.5)), fs = s / pas - 0.5, i = fx | 0, j = Math.floor(fs), a = fx - i, b = fs - j;
+    const lire = (r, c) => { const k = Math.floor(r / nt); return H(k)[(r - k * nt) * nx + c]; };
+    return Math.max(0, (lire(j, i) * (1 - a) + lire(j, i + 1) * a) * (1 - b) + (lire(j + 1, i) * (1 - a) + lire(j + 1, i + 1) * a) * b);
   };
-  const c = 2, nx = Math.floor(W / c), ns = Math.floor(L / c), vu = new Uint8Array(nx * ns), f = new Int32Array(nx * ns);
-  const sDep = 132, iDep = Math.round(m.route[Math.round(sDep / pas)] / c), jDep = Math.round(sDep / c);
+  const c = 2, cx = Math.floor(W / c), cs = Math.floor(L / c), vu = new Uint8Array(cx * cs), f = new Int32Array(cx * cs);
+  const sDep = SDEPART, iDep = Math.round(route[Math.round(sDep / pas)] / c), jDep = Math.round(sDep / c);
   let a = 0, b = 0, plusLoin = 0;
-  f[b++] = jDep * nx + iDep; vu[f[0]] = 1;
+  f[b++] = jDep * cx + iDep; vu[f[0]] = 1;
   while (a < b) {
-    const k = f[a++], j = Math.floor(k / nx), i = k - j * nx, h0 = h(i * c, j * c);
+    const k = f[a++], j = Math.floor(k / cx), i = k - j * cx, h0 = h(i * c, j * c);
     if (j * c > plusLoin) plusLoin = j * c;
     for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
       const u = i + di, v = j + dj;
-      if (u < 4 || u >= nx - 4 || v < 16 || v >= ns) continue;
-      const q = v * nx + u;
+      if (u < 4 || u >= cx - 4 || v < 16 || v >= cs) continue;
+      const q = v * cx + u;
       if (vu[q]) continue;
       // Pente tâtée au pas de la Horde, dans le sens de la marche.
       if (h((i + di * PAS / c) * c, (j + dj * PAS / c) * c) - h0 > MAXI) continue;

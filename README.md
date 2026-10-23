@@ -34,6 +34,10 @@ La Horde a peu de vivres : chaque camp consomme une ration, et sans repas on ne 
 dans les villes, et Aoi ou Larco en rapportent tant qu'ils vivent. Dans un furvent, le bloc ne suffit pas : à découvert, le vent
 arrache quelqu'un toutes les quelques secondes, seul un vrai abri protège. Tout se règle dans `src/jeu/reglages.js`.
 
+La route est longue : T accélère le temps jusqu'à ×16, et le moindre danger le ramène à la normale. Le vent monte par paliers
+jusqu'à Krafla, avec des accalmies de plus en plus fortes, et les furvents comme la Poursuite se rapprochent : le dernier
+sixième de la route est de loin le plus dur.
+
 Les 23 signes en bas de l'écran sont la Horde. Quand un hordier tombe, ce qu'il apportait disparaît avec lui :
 sans Oroshi, plus d'alerte avant le furvent ; sans Arval, plus de creux marqué ; sans Alme, on récupère moins vite ;
 sans Callirhoé, plus de feu ; sans Erg, un croc frappe à sa place et moins bien.
@@ -78,13 +82,22 @@ Une seule famille, Spectral (Production Type, licence OFL). Le son est entièrem
 ## Fabrique
 
 ```
-src/monde/       graine → relief, abris, vent (dans un worker), textures
+src/monde/       graine → esquisse, puis relief, vent et lumière par tranches, dans un worker
 src/rendu/       sol, ciel, ombres, filets, herbe, souffle, semis, figures, monuments, Physalis, mur du furvent, foudre, post-traitement
 src/jeu/         la Horde, le vent instantané, les événements, les textes
 src/hud.js       interface  ·  src/carte.js  la bande  ·  src/audio.js  le son  ·  src/main.js  la boucle
 ```
 
+Le monde se fabrique à la vue. L'esquisse (contrées, route, lieux, abris, grand vent à maille large) se calcule au chargement ;
+chaque tranche de 400 unités se calcule ensuite à la demande, et ne dépend que de la graine et de son numéro. Dix-sept tranches
+tournent en anneau autour de la Horde. La brume, plafonnée à 3 000 unités, ne s'ouvre jamais au-delà de ce qui existe.
+
+Les lieux commandent le relief : chaque `ancre` de `monde/contrees.js` impose une altitude et une forme (plateau, col, cirque),
+et le terrain rejoint le relief alentour sur un rayon de raccord. Le vent se résout ensuite sur le résultat.
+
 `node outils/passage.mjs` vérifie qu'une série de mondes se traverse à pied.
+`sh outils/tournoi.sh [adresse]` joue des parties complètes sans rendu, avec les vraies règles et un joueur automatique ;
+`node outils/simulation.mjs <graine> <adresse> --detail` donne le détail d'une partie. C'est l'outil pour régler la difficulté.
 
 Le vent de jeu et le vent des lignes sont écrits deux fois, à l'identique : `jeu/vent.js` et `rendu/communs.js`.
 Toute modification doit toucher les deux.
