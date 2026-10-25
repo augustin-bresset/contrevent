@@ -5,13 +5,14 @@
 // sur tout le monde, puis affiné dans chaque tranche. Il contourne les massifs, s'accélère dans les défilés.
 import { MONDE, CONTREES, LIEUX, SOLEIL, ECHELLE } from './contrees.js';
 import { creerBruit, alea } from './bruit.js';
+import { composer, emprises } from './villes.js';
 
 const lisse = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 const mix = (a, b, t) => a + (b - a) * t;
 
 const OMEGA = 1.86, PAS_APERCU = 24, MARGE_APERCU = 1200;
 const ITER_APERCU = 160, ITER_TRANCHE = 60;
-const PAS_T = [3, 6, 10, 15, 22, 32, 45, 62, 85, 115, 155, 210];
+const PAS_T = [3, 6, 10, 15, 22, 32, 45, 62, 85, 115, 155, 210, 290, 390];
 
 // Une demi-fois de SOR sur div(r grad ψ) = 0 : les colonnes de bord sont tenues, comme les lignes `fixe`.
 function relaxer(psi, res, nx, nj, iter, fixe) {
@@ -104,29 +105,41 @@ export function creerFabrique(graine) {
     return { ...a, x: l.x, s: l.s, portee, id: l.id };
   });
 
+  // Un gradin : le relief se pose en replats, séparés par des ressauts raides. C'est ce qui fait une mesa.
+  const gradins = (h, pas0, raide = 0.72) => { const q = h / pas0, f = q - Math.floor(q); return (Math.floor(q) + lisse(raide, 1, f)) * pas0; };
+
   const relief = {
-    banquise: (x, s) => 6 + 3.5 * b.fbm(x / 110, s / 110, 3) + 7 * Math.pow(b.crete(x / 170, s / 90, 3), 2),
-    coteaux: (x, s) => 9 + 17 * (0.5 + 0.8 * b.fbm(x / 150, s / 150, 4)),
+    banquise: (x, s) => 6 + 3.5 * b.fbm(x / 110, s / 110, 3) + 7 * Math.pow(b.crete(x / 170, s / 90, 3), 2) + 0.7 * b.fbm(x / 9, s / 26, 2),
+    coteaux: (x, s) => 9 + 17 * (0.5 + 0.8 * b.fbm(x / 150, s / 150, 4)) + 5 * Math.pow(b.crete(x / 70, s / 70, 3), 1.4),
     flaque: (x, s) => {
       const n = b.fbm(x / 130, s / 130, 4);
       return -1.1 + 0.35 * b.fbm(x / 40, s / 40, 2) + Math.max(0, n - 0.3) * 34;
     },
+    // Une dune n'est pas une vague : un long dos face au vent, une crête nette, une face d'avalanche sous le vent.
     dunes: (x, s) => {
-      const w = 90 * b.fbm(x / 260, s / 260, 3), q = (s + w + 0.25 * x) / 74 * 6.283;
-      const onde = Math.pow(0.5 + 0.5 * Math.sin(q + 0.8 * Math.sin(q)), 1.6);
-      const m = 0.6 + 0.6 * b.fbm(x / 340, s / 340, 2);
-      return 5 + 13 * onde * m + 7 * (0.5 + b.fbm(x / 380, s / 380, 2));
+      const w = 90 * b.fbm(x / 260, s / 260, 3), q = (s + w + 0.25 * x) / 74, f = q - Math.floor(q);
+      const onde = f < 0.17 ? lisse(0, 0.17, f) : Math.pow(1 - (f - 0.17) / 0.83, 1.5);
+      const m = 0.55 + 0.75 * b.fbm(x / 340, s / 340, 2) + 0.3 * b.fbm(x / 60, s / 90, 2);
+      const q2 = (s + 0.6 * w + 0.5 * x) / 13, f2 = q2 - Math.floor(q2);
+      const petite = (f2 < 0.2 ? f2 / 0.2 : 1 - (f2 - 0.2) / 0.8) * Math.max(0, 0.5 + b.fbm(x / 34, s / 34, 2));
+      return 5 + 16 * onde * Math.max(0.1, m) + 7 * (0.5 + b.fbm(x / 380, s / 380, 2)) + 0.9 * petite * (1 - onde * 0.6);
     },
-    canyon: (x, s) => 30 + 8 * b.fbm(x / 120, s / 120, 3),
-    massif: (x, s) => 14 + 74 * Math.pow(b.crete(x / 180, s / 150, 5), 1.5),
+    // Des mesas : les couches dures tiennent, les tendres s'en vont.
+    canyon: (x, s) => {
+      const m = b.crete(x / 130 + 3, s / 170, 4);
+      return 24 + gradins(8 * b.fbm(x / 120, s / 120, 3) + 34 * Math.pow(m, 1.6) + 2.2 * b.fbm(x / 30, s / 30, 2), 5.2);
+    },
+    massif: (x, s) => {
+      const h = 14 + 74 * Math.pow(b.crete(x / 180, s / 150, 5), 1.5);
+      return h + 9 * lisse(24, 60, h) * b.crete(x / 26, s / 34, 3);
+    },
     plateforme: (x, s) => 3.2 + 1.6 * b.fbm(x / 170, s / 170, 3),
-    terrasses: (x, s) => {
-      const h = 24 + 20 * b.fbm(x / 200, s / 200, 4);
-      const k = 6, t = h / k, f = t - Math.floor(t);
-      return (Math.floor(t) + lisse(0.75, 1, f)) * k;
+    terrasses: (x, s) => gradins(24 + 20 * b.fbm(x / 200, s / 200, 4) + 1.4 * b.fbm(x / 40, s / 40, 2), 6, 0.75),
+    cimes: (x, s) => {
+      const h = 42 + 88 * Math.pow(b.crete(x / 150, s / 170, 5), 1.3);
+      return h + 14 * lisse(60, 110, h) * b.crete(x / 24, s / 30, 3);
     },
-    cimes: (x, s) => 42 + 88 * Math.pow(b.crete(x / 150, s / 170, 5), 1.3),
-    cendres: (x, s) => 40 + 10 * b.fbm(x / 90, s / 90, 3) + 18 * Math.pow(b.crete(x / 140, s / 140, 3), 2),
+    cendres: (x, s) => 40 + 10 * b.fbm(x / 90, s / 90, 3) + 18 * Math.pow(b.crete(x / 140, s / 140, 3), 2) + 3.5 * b.crete(x / 30, s / 42, 3),
     vide: (x, s) => 40 + 1.5 * b.fbm(x / 200, s / 200, 2),
   };
 
@@ -134,7 +147,7 @@ export function creerFabrique(graine) {
     let h = relief[c.relief](x / K, s / K) * HK;
     if (c.couloir) {
       const d = Math.abs(x - xRoute(s));
-      h = mix(c.solRoute * HK + 2.5 * b.fbm(x / 60, s / 60, 2), h, lisse(c.couloir * K * 0.75, c.couloir * K * 2.1, d));
+      h = mix(c.solRoute * HK + 2.5 * b.fbm(x / 60, s / 60, 2), h, lisse(c.couloir * K * 0.75, c.couloir * K * (c.relief === 'canyon' ? 1.2 : 2.1), d + 16 * b.fbm(x / 70, s / 70, 2)));
     }
     if (c.passe) {
       const d = Math.abs(x - W * coteDetour);
@@ -178,14 +191,28 @@ export function creerFabrique(graine) {
       else if (prec && dPrec < FONDU) h = mix(hauteurDans(prec, x, s), h, 0.5 + 0.5 * lisse(0, 1, dPrec / FONDU));
       // Les deux glaces qui bordent le monde.
       const e = Math.min(x, W - x), g = 1 - lisse(0, 96 + 56 * b.s2(s / 190, x > W / 2 ? 3 : 9), e);
-      h += 260 * g * g;
-      // La Falaise des Confins, derrière Aberlaas.
-      if (s < 240) { const f = 1 - lisse(30, 240, s); h += 320 * f * f; }
+      if (g > 0) h += g * g * (150 + 330 * (0.5 + b.fbm(s / 380, x > W / 2 ? 3 : 9, 3)) + 90 * b.crete(s / 120, x / 90, 3));
       // Le monde s'achève sur le vide : le sol tombe dans la lumière.
       if (fin > 0) h -= fin * fin * 120;
       for (const a of proches) h = ancrer(a, x, s, h);
+      // La Falaise des Confins, derrière Aberlaas : un mur en gradins qui monte plus haut que les nuages. Personne n'en a vu le sommet.
+      if (s < 160) {
+        const pied = 112 + 30 * b.fbm(x / 210, 5, 3) + 9 * b.crete(x / 46, 9, 2);
+        if (s < pied) { const q = (pied - s) / 92 + 0.16 * b.fbm(x / 120, s / 200, 2), r = Math.floor(q), e0 = q - r; h += (r + lisse(0, 0.34, e0)) * 900 + 60 * b.fbm(x / 34, s / 34, 2) * lisse(0, 0.3, q); }
+      }
       o[k0 + i] = h;
     }
+  }
+
+  // Les villes se posent sur le sol qui les attendait. Leurs murs comptent : le vent les contourne, et on dort derrière.
+  const solUn = new Float32Array(1);
+  const solIci = (x, s) => { rangee(s, 1, 2 * x, solUn, 0); return Math.max(0, solUn[0]); };
+  const pleins = [];
+  for (const l of lieux) {
+    let h0 = 0; for (const c of l.id) h0 = (h0 * 31 + c.charCodeAt(0)) | 0;
+    l.bati = composer(l, alea(graine ^ h0), xRoute);
+    for (const q of l.bati) q.y0 = solIci(q.x, q.s) - 0.6 + q.y;
+    pleins.push(...emprises(l.bati));
   }
 
   // Les abris : des lames de roche en travers du vent, toujours à portée de la route.
@@ -273,7 +300,8 @@ export function creerFabrique(graine) {
       let v = 1;
       for (const d of PAS_T) {
         const e = h0 + d * pente - haut0(x + dxs * d, s + dss * d);
-        const u = Math.max(0, Math.min(1, (e + 1.6) / 3.2));
+        // Plus l'obstacle est loin, plus son ombre est douce et faible : elle s'éteint avant la limite du calcul, sans bord net.
+        const u = 1 - (1 - Math.max(0, Math.min(1, (e + 1.6 + d * 0.02) / (3.2 + d * 0.04)))) * (1 - lisse(170, 380, d));
         if (u < v) v = u;
         if (v <= 0) break;
       }
@@ -293,6 +321,17 @@ export function creerFabrique(graine) {
     for (let j = 0, q = 0; j < nj; j++) for (let i = 0; i < gx; i++, q++) {
       const x = (i + 0.5) * pasVent, s = s0 + (j + 0.5) * pasVent;
       haut[q] = Math.max(0, sol(x, s)); psi[q] = lireA(psiA, x, s);
+    }
+    // Les murs : ce qui est plein ne laisse pas passer le vent.
+    const dedans = new Uint8Array(n);
+    for (const e of pleins) {
+      if (e.s + e.r < s0 || e.s - e.r > s0 + nj * pasVent) continue;
+      const i0 = Math.max(0, Math.floor((e.x - e.r) / pasVent)), i1 = Math.min(gx - 1, Math.ceil((e.x + e.r) / pasVent));
+      const j0 = Math.max(0, Math.floor((e.s - e.r - s0) / pasVent)), j1 = Math.min(nj - 1, Math.ceil((e.s + e.r - s0) / pasVent));
+      for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+        if (Math.hypot((i + 0.5) * pasVent - e.x, s0 + (j + 0.5) * pasVent - e.s) > e.r + 3) continue;
+        const q = j * gx + i; haut[q] += Math.min(60, e.h); dedans[q] = 1;
+      }
     }
     for (let i = 0; i < gx; i++) abri[(nj - 1) * gx + i] = lireA(abriA, (i + 0.5) * pasVent, s0 + (nj - 0.5) * pasVent);
     const moy = moyenner(haut, gx, nj, 11);
@@ -316,6 +355,7 @@ export function creerFabrique(graine) {
         let vx = ds * F * a, vs = -dx * F * a;
         const m = Math.hypot(vx, vs);
         if (m > P) { vx *= P / m; vs *= P / m; }
+        if (dedans[J * gx + i]) vx = vs = 0;
         v[q] = vx; v[q + 1] = vs; v[q + 2] = ab; v[q + 3] = 1;
       }
     }
@@ -328,7 +368,7 @@ export function creerFabrique(graine) {
   }
 
   const esquisse = {
-    graine, route, coteDetour, abris, lieux, ax, as, margeApercu: MARGE_APERCU, pasApercu: PAS_APERCU, apercu,
+    graine, route, coteDetour, abris, lieux, emprises: pleins, ax, as, margeApercu: MARGE_APERCU, pasApercu: PAS_APERCU, apercu,
     contrees: contrees.map(({ id, nom, s, relief: rl, force, ombre, lumiere, encre, trait, ciel, pasLigne, rides = 0, grain = 0, herbe = 0, herbeTon }) => ({ id, nom, s, relief: rl, force, ombre, lumiere, encre, trait, ciel, pasLigne, rides, grain, herbe, herbeTon })),
   };
   return { esquisse, tranche: fabriquerTranche, relief: reliefTranche };
