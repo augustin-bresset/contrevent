@@ -1,44 +1,15 @@
-// Le sol : un dessin de carte. Lavis à deux tons selon la lumière, courbes de niveau à l'encre, et le vent par-dessus.
-// De près, le dessin se charge : rides du sable, gravier, veines d'érosion. Dans le furvent, tout s'inverse.
+// Le sol. Une seule maille qui suit la caméra par anneaux concentriques, fine sous les pieds, large à l'horizon ;
+// et une vraie matière : des scans réels, mêlés selon la pente, l'altitude et la contrée, éclairés par le ciel et le soleil.
+// Les courbes de niveau restent : elles reviennent quand on demande à lire le relief.
 import * as THREE from 'three';
 import { FENETRE } from './lignes.js';
 import { GLSL_COMMUN, GLSL_OMBRE } from './communs.js';
-import { SOLEIL } from '../monde/contrees.js';
+import { COUCHE } from '../monde/contrees.js';
 
-const VERT = /* glsl */`
-uniform sampler2D tH, tPal, tVent; uniform vec2 uAnneau, uCentreMaille; uniform float uDescente, uBande; uniform mat4 uOmbreM;
-varying vec3 vW; varying float vProf; varying vec4 vOm;
-varying vec3 vOmbre, vLum, vEncre, vTrait, vCiel, vReg, vHerbe; varying vec2 vVent; varying float vDens;
-vec3 pal(float c, float s) { return texture2D(tPal, vec2((c + 0.5) / 7.0, s)).rgb; }
-void main() {
-  vec3 p = position; p.x += uCentreMaille.x; p.z -= uCentreMaille.y;
-  vec2 uv = vec2(p.x, -p.z) / uAnneau;
-  float sv = -p.z / uBande;
-  p.y = max(texture2D(tH, uv).r, 0.0) - uDescente;
-  vW = vec3(p.x, p.y, -p.z);
-  // La palette et le vent varient lentement : au sommet plutôt qu'au pixel, c'est six lectures de moins.
-  vOmbre = pal(0.0, sv); vLum = pal(1.0, sv); vEncre = pal(2.0, sv); vTrait = pal(3.0, sv); vCiel = pal(4.0, sv); vReg = pal(5.0, sv); vHerbe = pal(6.0, sv);
-  vDens = texture2D(tPal, vec2(5.5 / 7.0, sv)).a;
-  vVent = texture2D(tVent, uv).xy;
-  vOm = uOmbreM * vec4(p, 1.0);
-  vec4 mv = modelViewMatrix * vec4(p, 1.0);
-  vProf = -mv.z;
-  gl_Position = projectionMatrix * mv;
-}`;
+const N = 64;     // demi-côté d'un anneau, en mailles
 
-const FRAG = /* glsl */`
-precision highp float;
-uniform sampler2D tH, tTrace, tL;
-uniform vec2 uTexel, uCentreTrace;
-uniform vec3 uFeu;                 // x, s, intensité
-uniform vec4 uNavireO;             // x, s, rayon, présence
-uniform vec3 uVentMoyen;           // direction pour les nuages
-uniform vec4 uRemousT[8];          // les chrones : x, s, rayon, force
-varying vec3 vW; varying float vProf; varying vec4 vOm;
-varying vec3 vOmbre, vLum, vEncre, vTrait, vCiel, vReg, vHerbe; varying vec2 vVent; varying float vDens;
-${GLSL_COMMUN}
-${GLSL_OMBRE}
-
+const GLSL_HAUT = /* glsl */`
+uniform sampler2D tH; uniform vec2 uTexel;
 float hCub(vec2 uv) {
   vec2 st = uv / uTexel - 0.5, f = fract(st), i = st - f;
   vec2 f2 = f * f, f3 = f2 * f;
@@ -49,127 +20,231 @@ float hCub(vec2 uv) {
   float a = mix(texture2D(tH, vec2(p1.x, p1.y)).r, texture2D(tH, vec2(p0.x, p1.y)).r, g0.x);
   float b = mix(texture2D(tH, vec2(p1.x, p0.y)).r, texture2D(tH, vec2(p0.x, p0.y)).r, g0.x);
   return mix(a, b, g0.y);
+}`;
+
+const VERT = /* glsl */`
+attribute vec3 iNiv;                    // pas, centre x, centre s
+uniform sampler2D tVent, tBruit; uniform vec2 uAnneau; uniform float uBande;
+${GLSL_HAUT}
+varying vec3 vW, vVent; varying float vProf;
+float montagne(vec2 p) {
+  float a = texture2D(tBruit, p * 0.0000034).r, b = texture2D(tBruit, p * 0.000011 + 0.4).g, c = texture2D(tBruit, p * 0.00004 + 0.7).b;
+  return (1.0 - abs(2.0 * a - 1.0)) * 300.0 + (1.0 - abs(2.0 * b - 1.0)) * 130.0 + c * 44.0;
 }
+void main() {
+  float pas = iNiv.x; vec2 g = position.xz;
+  vec2 rel = abs(g) / ${N.toFixed(1)}; float m = smoothstep(0.7, 0.93, max(rel.x, rel.y)) * step(0.5, position.y);
+  vec2 q = (g - mod(g, 2.0) * m) * pas + iNiv.yz;
+  vec2 uv = q / uAnneau;
+  float h = pas < 2.5 ? hCub(uv) : texture2D(tH, uv).r;
+  // Au-delà des glaces qui bordent le monde, des chaînes que personne n'a jamais remontées.
+  float o = max(-q.x, q.x - uAnneau.x);
+  if (o > 0.0) h += montagne(q) * smoothstep(0.0, 260.0, o);
+  float y = max(h, 0.0);
+  vW = vec3(q.x, y, q.y);
+  vVent = texture2D(tVent, uv).xyz;
+  vec4 mv = modelViewMatrix * vec4(q.x, y, -q.y, 1.0);
+  vProf = -mv.z;
+  gl_Position = projectionMatrix * mv;
+}`;
+
+const FRAG = /* glsl */`
+precision highp float;
+precision highp sampler2DArray;
+uniform sampler2D tTrace, tMat;
+uniform sampler2DArray tCouleur, tRelief;
+uniform vec2 uCentreTrace;
+uniform vec4 uNavireO;             // x, s, rayon, présence
+uniform sampler2D tNC; uniform vec2 uVentN; uniform float uCouv;   // la carte des nuages, et ce que le vent en a fait
+uniform vec4 uRemousT[8];          // les chrones : x, s, rayon, force
+uniform float uCarte, uDetail, uAbriV;
+varying vec3 vW, vVent; varying float vProf;
+${GLSL_COMMUN}
+${GLSL_OMBRE}
+${GLSL_HAUT}
+
+// Échelle de chaque couche (taille d'une tuile) et force de ses pentes.
+const float ECH[8] = float[8](9.0, 34.0, 26.0, 11.0, 12.0, 15.0, 13.0, 11.0);
+const float NRM[8] = float[8](0.7, 1.5, 1.5, 1.1, 0.5, 1.0, 1.2, 0.8);
+const vec3 MOY[8] = vec3[8](vec3(0.283, 0.238, 0.196), vec3(0.213, 0.092, 0.034), vec3(0.438, 0.296, 0.201), vec3(0.313, 0.183, 0.084), vec3(0.379, 0.378, 0.389), vec3(0.284, 0.233, 0.137), vec3(0.634, 0.403, 0.226), vec3(0.212, 0.187, 0.156));
+
 float lignes(float v, float demi) {
   float w = max(fwidth(v), 1e-5), d = abs(fract(v - 0.5) - 0.5) / w;
   float l = 1.0 - smoothstep(demi - 0.6, demi + 0.6, d);
-  return mix(l, min(1.0, demi * 2.0 * w), smoothstep(0.22, 0.6, w));   // trop serré : la couverture moyenne, plus de moiré
+  return mix(l, min(1.0, demi * 2.0 * w), smoothstep(0.22, 0.6, w));
 }
-
+// Une couche, lue à deux échelles qui ne se recoupent jamais : c'est ce qui efface la répétition.
+void couche(float i, vec2 p, float pres, inout vec3 c, inout vec3 d) {
+  int k = int(i); float e = ECH[k];
+  vec2 b = (p / (e * 4.37) + vec2(0.31, 0.17)) * mat2(0.8, 0.6, -0.6, 0.8);
+  vec3 cb = texture(tCouleur, vec3(b, i)).rgb, db = texture(tRelief, vec3(b, i)).rgb;
+  c = cb / MOY[k]; d = vec3((db.xy - 0.5) * 1.2, db.z);
+  if (pres > 0.001) {
+    vec2 a = p / e;
+    vec3 ca = texture(tCouleur, vec3(a, i)).rgb, da = texture(tRelief, vec3(a, i)).rgb;
+    c = mix(c, mix(c, vec3(1.0), 0.55) * ca / MOY[k], pres); d = mix(d, vec3(d.xy * 0.5 + (da.xy - 0.5) * 1.6, da.z * 0.6 + d.z * 0.4), pres);
+  }
+  d.xy *= NRM[k];
+}
 void main() {
+  vec3 P = vec3(vW.x, vW.y, -vW.z);
   vec2 uv = vW.xz / uAnneau;
-  vec3 ombre = vOmbre, lum = vLum, encre = vEncre, trait = vTrait, ciel = vCiel;
-  float pas = vReg.r * 10.0, rides = vReg.g, grain = vReg.b;
+  float bord = max(-vW.x, vW.x - uAnneau.x);
+  float dv = clamp(vW.z / uBande, 0.0, 1.0);
 
-  float h = hCub(uv);
-  float det = (bruit(vW.xz * 0.11) - 0.5) * 0.8 + (bruit(vW.xz * 0.37) - 0.5) * 0.22;
-  float e = 2.0;
-  float hx = texture2D(tH, (vW.xz + vec2(e, 0.0)) / uAnneau).r - texture2D(tH, (vW.xz - vec2(e, 0.0)) / uAnneau).r;
-  float hz = texture2D(tH, (vW.xz + vec2(0.0, e)) / uAnneau).r - texture2D(tH, (vW.xz - vec2(0.0, e)) / uAnneau).r;
-  float pres = smoothstep(190.0, 34.0, vProf);
+  // La contrée d'ici, lue à une position bousculée par le bruit : les frontières sont organiques, et une seule contrée se lit par pixel.
+  float bk = bruit(vW.xz * 0.012) + 0.5 * bruit(vW.xz * 0.05);
+  float rang = clamp(dv * 1024.0 + (bk - 0.75) * 7.0, 0.0, 1023.0);
+  vec4 m0 = texelFetch(tMat, ivec2(0, int(rang)), 0), m1 = texelFetch(tMat, ivec2(1, int(rang)), 0);
+  float sol1 = floor(m0.r * 255.0 + 0.5), sol2 = floor(m0.g * 255.0 + 0.5), roche = floor(m0.b * 255.0 + 0.5), neigeK = m0.a;
+  float penteR = m1.r, prisR = m1.g * 2.0, herbeK = m1.b;
 
-  // Les rides du vent, en travers de lui. Elles bossellent la lumière, et on les voit encore de haut.
-  float ondu = vW.z + 5.0 * bruit(vW.xz * 0.05) + 1.4 * bruit(vW.xz * 0.23);
-  float rd = sin(ondu * 2.4) * 0.5 + sin(ondu * 5.1 + 1.0) * 0.14;
-  hz += rides * rd * (0.12 + 0.42 * pres) * (1.0 - smoothstep(0.0, 0.5, abs(hx) * 0.3));
+  vec3 ombre = palette(0, dv), lum = palette(1, dv), encre = palette(2, dv);
+  ombre *= ombre; lum *= lum; encre *= encre;     // la palette est donnée en valeurs d'écran
+  lum = mix(vec3(dot(lum, vec3(0.3, 0.59, 0.11))), lum, 0.72); ombre = mix(vec3(dot(ombre, vec3(0.3, 0.59, 0.11))), ombre, 0.6);
+  vec3 reg = palette(5, dv); float pasL = reg.r * 10.0, rides = reg.g, grain = reg.b;
 
-  vec3 n = normalize(vec3(-hx, 2.0 * e, hz));
-  float pente = clamp((1.0 - n.y) * 1.6, 0.0, 1.0);
+  float h = vProf < 500.0 ? hCub(uv) : texture2D(tH, uv).r;
+  float e = 2.0, hx, hz;
+  if (vProf < 240.0) {
+    hx = hCub((vW.xz + vec2(e, 0.0)) / uAnneau) - hCub((vW.xz - vec2(e, 0.0)) / uAnneau);
+    hz = hCub((vW.xz + vec2(0.0, e)) / uAnneau) - hCub((vW.xz - vec2(0.0, e)) / uAnneau);
+  } else {
+    e = max(2.0, vProf * 0.004);
+    hx = texture2D(tH, (vW.xz + vec2(e, 0.0)) / uAnneau).r - texture2D(tH, (vW.xz - vec2(e, 0.0)) / uAnneau).r;
+    hz = texture2D(tH, (vW.xz + vec2(0.0, e)) / uAnneau).r - texture2D(tH, (vW.xz - vec2(0.0, e)) / uAnneau).r;
+  }
+  vec3 nG = normalize(vec3(-hx, 2.0 * e, hz));
+  if (bord > 0.0) nG = normalize(cross(dFdy(P), dFdx(P)));
+  float pente = 1.0 - nG.y;
+  float pres = smoothstep(420.0, 70.0, vProf) * uDetail;
 
-  // La lumière : le soleil, moins ce que le relief et les monuments lui prennent ; le ciel, moins les creux.
-  vec2 lr = texture2D(tL, uv).rg;
-  float portee = vProf < 520.0 ? ombrePortee(vOm, gl_FragCoord.xy) : 0.0;
-  float vu = lr.r * (1.0 - 0.92 * portee);
-  // Un sol plat doit rester clair : on mesure la lumière par rapport à ce qu'il reçoit, lui.
-  float jour = clamp(dot(n, uSoleil) / uSoleil.y * 0.74, 0.0, 1.0) * mix(0.22, 1.0, vu);
-  float lave = smoothstep(0.1, 0.86, jour);
+  // Le creux et la bosse : le sable va aux creux, le gravier reste sur les bosses.
+  float hb = texture2D(tH, uv + uTexel * vec2(9.0, 0.0)).r + texture2D(tH, uv - uTexel * vec2(9.0, 0.0)).r + texture2D(tH, uv + uTexel * vec2(0.0, 9.0)).r + texture2D(tH, uv - uTexel * vec2(0.0, 9.0)).r;
+  float creux = clamp((hb * 0.25 - h) * 0.26, -1.0, 1.0);
+  float macro = fbm3(vW.xz * 0.0045) * 0.7 + fbm3(vW.xz * 0.019 + 7.0) * 0.3;
 
-  // L'ombre des nuages passe sur le lavis, poussée par le vent.
-  vec2 pn = (vW.xz + vec2(14.0, -11.0)) * 0.0042 + uVentMoyen.xy * uTemps * 0.012;
-  float nuage = smoothstep(0.5, 0.72, fbm3(pn));
+  // Le sol.
+  vec3 cS, dS; couche(sol1, vW.xz, pres, cS, dS);
+  float qSol2 = smoothstep(0.42, 0.62, macro - creux * 0.25 + (dS.z - 0.5) * 0.14);
+  if (sol2 != sol1 && qSol2 > 0.003) {
+    vec3 c2, d2; couche(sol2, vW.xz, pres, c2, d2);
+    cS = mix(cS, c2, qSol2); dS = mix(dS, d2, qSol2);
+  }
+  vec3 alb = cS * mix(lum, ombre, 0.3) * 0.86;
 
-  // Les strates : une modulation douce selon l'altitude (Symphony of Vines, chapitre 1).
-  float q = (h + det) * 0.86, st = mix(bruit(vec2(q, 3.0)), bruit(vec2(q * 2.3, 11.0)), 0.4);
-  vec3 col = mix(mix(ombre, lum, 0.34), lum, clamp(lave + (st - 0.5) * (0.14 + pente * 0.5), 0.0, 1.0));
-  col = mix(col, ombre, nuage * 0.2);
-  col *= mix(vec3(0.8, 0.84, 0.92), vec3(1.0), vu * 0.6 + 0.4);   // l'ombre prend la couleur du ciel
-  col *= mix(0.7, 1.0, lr.g);
+  // La roche : posée sur les parois, ses strates suivent l'altitude. On lit le mur par le côté où il regarde.
+  float wR = 0.0; vec3 nTex = vec3(dS.xy, 0.0);
+  float qR = pente + (macro - 0.5) * 0.14 + creux * -0.05 + (dS.z - 0.5) * 0.05;
+  float seuil = 0.04 + penteR * 0.5;
+  if (qR > seuil - 0.1) {
+    vec2 pR = abs(nG.x) > abs(nG.z) ? vec2(vW.z, vW.y * 1.7) : vec2(vW.x, vW.y * 1.7);
+    vec2 pP = nG.y > 0.72 + (bk - 0.75) * 0.3 ? vW.xz : pR;
+    vec3 cR, dR; couche(roche, pP + vec2(bruit(vW.xz * 0.04) * 6.0, bruit(vW.xz * 0.07) * 4.0), pres, cR, dR);
+    cR = mix(vec3(dot(cR, vec3(0.3, 0.59, 0.11))), cR, 0.3); cR = mix(vec3(1.0), cR, 0.72);
+    wR = clamp((qR - seuil) / 0.1 + (dR.z - 0.5) * 1.2, 0.0, 1.0);
+    vec3 tR = mix(ombre, lum, 0.42) * prisR * 1.0;
+    alb = mix(alb, cR * tR, wR);
+    nTex.xy = mix(nTex.xy, dR.xy * 1.7, wR);
+  }
 
-  // Sous les prairies, le sol prend la couleur de l'herbe : les brins s'y fondent au lieu de faire du chaume.
-  if (vDens > 0.01) {
+  // La neige : elle tient sur ce qui n'est pas trop raide, et s'amasse aux creux.
+  float wN = 0.0;
+  if (neigeK > 0.003) {
+    vec3 cN, dN; couche(${COUCHE.neige.toFixed(1)}, vW.xz, pres, cN, dN);
+    wN = smoothstep(0.0, 0.25, neigeK * 1.25 - pente * 1.6 + (macro - 0.5) * 0.5 + creux * 0.3 + (dN.z - 0.5) * 0.1);
+    alb = mix(alb, vec3(0.84, 0.88, 0.92) * (0.82 + 0.18 * cN), wN);
+    nTex.xy = mix(nTex.xy, dN.xy, wN);
+  }
+
+  // Les veines et les taches : ce qui casse les grandes surfaces, vu de loin.
+  float veine = fbm3(vec2(vW.x * 0.034, vW.z * 0.0028)) - 0.5;
+  alb *= 1.0 + veine * 0.5 * (1.0 - wN) * grain;
+  alb *= 0.86 + 0.28 * macro;
+
+  // Les strates : une modulation douce selon l'altitude.
+  float q = h * 0.5 + bruit(vW.xz * 0.02) * 1.5, st = mix(bruit(vec2(q, 3.0)), bruit(vec2(q * 2.3, 11.0)), 0.4);
+  alb *= mix(1.0, 0.72 + 0.56 * st, wR * 0.8);
+
+  // Sous les prairies, le sol prend la couleur de l'herbe.
+  if (herbeK > 0.01 && wR < 0.9) {
+    vec3 vert = palette(6, dv); vert *= vert;
     float pre = smoothstep(0.34, 0.6, texture2D(tBruit, vW.xz * 0.0042).g);
-    col = mix(col, vHerbe * (0.84 + 0.3 * lave), clamp(vDens * 2.0, 0.0, 1.0) * (0.42 + 0.5 * pre) * (1.0 - smoothstep(0.1, 0.6, -h + 0.2)));
+    alb = mix(alb, vert * (0.55 + 0.5 * cS.g), clamp(herbeK * 1.5, 0.0, 1.0) * (0.34 + 0.56 * pre) * (1.0 - wR) * (1.0 - wN));
   }
 
-  // Les veines d'érosion, couchées dans le sens du vent : ce qui donne du grain à la carte vue de haut.
-  float veine = fbm3(vec2(vW.x * 0.34, vW.z * 0.028)) - 0.5;
-  col = mix(col, veine > 0.0 ? lum : ombre, abs(veine) * (0.3 + 0.2 * grain));
+  // Les rides du vent, en travers de lui, qui bossellent la lumière.
+  float ondu = vW.z + 5.0 * bruit(vW.xz * 0.05) + 1.4 * bruit(vW.xz * 0.23);
+  float rd = cos(ondu * 2.4) * 0.5 + cos(ondu * 5.1 + 1.0) * 0.16;
+  float rq = rides * (1.0 - wR) * (1.0 - smoothstep(0.1, 0.5, pente)) * smoothstep(620.0, 90.0, vProf);
 
-  // Gravier et taches, qui n'apparaissent qu'en approchant.
-  vec4 gg = texture2D(tBruit, vW.xz * 1.7 / 256.0);
-  float gravier = smoothstep(0.7, 0.8, gg.r) * smoothstep(0.4, 0.6, gg.g);
-  float tache = smoothstep(0.55, 0.75, bruit(vW.xz * 0.21 + 40.0));
-  col = mix(col, ombre, grain * (gravier * 0.2 * smoothstep(240.0, 50.0, vProf) + tache * 0.1));
-  col *= 1.0 + (bruit(vW.xz * 7.0) - 0.5) * 0.07 * grain * pres;
+  vec3 n = normalize(nG + vec3(nTex.x, 0.0, -nTex.y) * mix(0.25, 1.0, pres) + vec3(0.0, 0.0, rd * 0.13 * rq));
 
-  // Les voiles : sable ou neige que le vent fait filer au ras du sol. Deux phases d'un même bruit, couché dans
-  // le sens du vent et poussé par lui, se relaient pour que le mouvement ne finisse jamais.
-  float fv = length(vVent), voile = 0.0;
-  if (fv > 0.12) {
-    vec2 dv = vVent / fv, nv = vec2(-dv.y, dv.x);
-    vec2 r = vec2(dot(vW.xz, nv) * 0.42, dot(vW.xz, dv) * 0.045);
-    float ph = uTemps * 0.55, f1 = fract(ph), f2 = fract(ph + 0.5);
-    float pousse = 5.0 + fv * 11.0;
-    float a = fbm3(r - vec2(0.0, f1 * pousse) + 3.7), b = fbm3(r - vec2(0.0, f2 * pousse) + 41.0);
-    float m = mix(a, b, abs(2.0 * f1 - 1.0));
-    voile = smoothstep(0.52, 0.72, m) * smoothstep(0.3, 1.1, fv) * (0.16 + 0.5 * max(rides, grain * 0.4));
-    col = mix(col, mix(lum, vec3(1.0), 0.2), voile * 0.42);
+  float rug = mix(0.86, 0.72, wR);
+  vec3 f0 = vec3(0.04);
+
+  // La lumière : le soleil, moins ce que le relief, les monuments et les nuages lui prennent.
+  vec2 lr = texture2D(tL, uv).rg;
+  float porte = vProf < 1380.0 ? soleilVu(P, gl_FragCoord.xy) : 1.0;
+  // L'ombre des nuages : la vraie, lue sur leur carte, au point où le rayon du soleil traverse leur couche.
+  vec2 pn = P.xz + uSoleil.xz / uSoleil.y * 2100.0 + uVentN;
+  float nuage = smoothstep(0.62 - uCouv * 0.24, 0.72 - uCouv * 0.24, texture2D(tNC, pn * 0.000024).r);
+  float vis = lr.r * porte * (1.0 - 0.72 * nuage);
+
+  float t = tempeteA(vW.z);
+  vec3 V = normalize(cameraPosition - P);
+  float ndl = max(dot(n, uSoleil), 0.0);
+  vec3 sun = uSoleilCol * vis * (1.0 - 0.96 * t);
+  vec3 amb = cielDiffus(n) * mix(0.5, 1.0, lr.g) * (1.0 - 0.72 * t);
+  vec3 rebond = alb * uSoleilCol * 0.1 * (1.0 - n.y * 0.5) * lr.g;
+
+  // Les voiles : sable ou neige que le vent fait filer au ras du sol.
+  float fv = length(vVent.xy), voile = 0.0;
+  if (fv > 0.12 && vProf < 900.0) {
+    vec2 dvv = vVent.xy / fv, nv = vec2(-dvv.y, dvv.x);
+    vec2 r = vec2(dot(vW.xz, nv) * 0.042, dot(vW.xz, dvv) * 0.0045);
+    float ph = uTemps * 0.55, f1 = fract(ph), f2 = fract(ph + 0.5), pousse = 0.5 + fv * 1.1;
+    float a = fbm3(r * 10.0 - vec2(0.0, f1 * pousse * 10.0) + 3.7), b = fbm3(r * 10.0 - vec2(0.0, f2 * pousse * 10.0) + 41.0);
+    float mm = mix(a, b, abs(2.0 * f1 - 1.0));
+    voile = smoothstep(0.52, 0.72, mm) * smoothstep(0.3, 1.1, fv) * (0.16 + 0.5 * max(rides, grain * 0.4)) * (1.0 - wR);
+    alb = mix(alb, lum * 0.95, voile * 0.5);
   }
 
-  // Les courbes de niveau : le relief dessine lui-même sa carte.
-  float hl = h + det;
-  float fin = lignes(hl / pas, 0.5), fort = lignes(hl / (pas * 5.0), 0.85);
-  float encrage = clamp(fin * 0.42 + fort * 0.8, 0.0, 1.0);
-  col = mix(col, encre, encrage * 0.72 * smoothstep(1400.0, 300.0, vProf));
-
+  vec3 col;
   // L'eau de la Flaque : une peau de ciel de quelques centimètres.
-  float eau = smoothstep(0.08, -0.22, h);
+  float eau = bord > 0.0 ? 0.0 : smoothstep(0.1, -0.2, h);
+  float mouille = smoothstep(1.4, 0.05, h) * (1.0 - eau) * (bord > 0.0 ? 0.0 : 1.0);
+  vec3 D = alb * mix(1.0, 0.55, mouille) * (sun * ndl + amb + rebond);
+  vec3 S = ggx(n, V, uSoleil, mix(rug, 0.3, mouille), f0, sun);
+  S += alb * pow(1.0 - max(dot(nG, V), 0.0), 5.0) * amb * 0.5;                 // le lustre rasant du sable
+  // Le grain qui accroche : mica dans le sable, givre dans la neige. Il s'allume quand le regard ou le temps passe dessus.
+  vec4 gg = texture2D(tBruit, vW.xz * 1.7 / 2.56);
+  vec3 hv = normalize(uSoleil + V);
+  float sc = pow(max(dot(normalize(gg.rgb - 0.5 + nG * 0.9), hv), 0.0), 900.0);
+  S += uSoleilCol * vis * sc * (wN * 3.0 + rides * 1.1 * (1.0 - wR)) * smoothstep(380.0, 60.0, vProf);
+  col = D + S;
+
   if (eau > 0.0) {
     vec2 vr = vW.xz * vec2(0.14, 0.42) + vec2(0.0, uTemps * 0.7);
-    float rid = bruit(vr) * 0.6 + bruit(vr * 2.7 + 2.0) * 0.4;
-    vec3 ceau = mix(mix(ombre, ciel, 0.6), ciel, smoothstep(-1.4, -0.1, h));
-    ceau = mix(ceau, lum, smoothstep(0.58, 0.8, rid) * 0.55);
-    ceau = mix(ceau, ombre, voile * 0.42);      // les risées qui courent sur l'eau
-    ceau = mix(ceau, ombre, nuage * 0.2);
-    ceau = mix(ceau, encre, lignes(h / 0.3, 0.5) * 0.09);
-    // Vue de près et de biais, elle renvoie le ciel.
-    vec3 V = normalize(vW * vec3(1.0, 1.0, -1.0) - cameraPosition);
-    vec3 N = normalize(vec3((rid - 0.5) * 0.05, 1.0, (bruit(vr * 1.7) - 0.5) * 0.05));
-    float fres = pow(1.0 - max(dot(-V, N), 0.0), 3.0);
-    ceau = mix(ceau, couleurCiel(reflect(V, N)), clamp(fres * 1.25, 0.0, 0.96));
+    vec2 vr2 = vW.xz * vec2(0.5, 1.1) + vec2(uTemps * 0.2, uTemps * 1.5);
+    vec2 pn2 = vec2(bruit(vr) - bruit(vr + vec2(0.7, 0.0)), bruit(vr) - bruit(vr + vec2(0.0, 0.7))) * 0.1 + vec2(bruit(vr2) - bruit(vr2 + vec2(0.7, 0.0)), bruit(vr2) - bruit(vr2 + vec2(0.0, 0.7))) * 0.05;
+    vec3 N2 = normalize(vec3(pn2.x * (1.0 + fv * 2.0), 1.0, pn2.y * (1.0 + fv * 2.0)));
+    float fres = 0.02 + 0.98 * pow(1.0 - max(dot(V, N2), 0.0), 5.0);
+    vec3 fondE = mix(ombre, lum, 0.2) * 0.4 * (sun * ndl + amb) * exp(h * 1.1);
+    vec3 refl = cielLu(reflect(-V, N2));
+    vec3 ceau = mix(fondE, refl, clamp(fres, 0.0, 1.0));
+    ceau += ggx(N2, V, uSoleil, 0.12, vec3(0.02), sun);
+    ceau = mix(ceau, lum * 1.2 * (sun * 0.4 + amb), voile * 0.3);
     col = mix(col, ceau, eau);
   }
-  float rive = smoothstep(0.35, 0.05, abs(h)) * (1.0 - eau);
-  col = mix(col, lum, rive * 0.8);
 
-  // Les filets du vent.
+  // Les filets du vent, et les pas.
   vec2 tu = (vW.xz - uCentreTrace) / ${FENETRE.toFixed(1)} + 0.5;
-  vec2 bord = smoothstep(vec2(0.0), vec2(0.1), tu) * smoothstep(vec2(0.0), vec2(0.1), 1.0 - tu);
+  vec2 cadre = smoothstep(vec2(0.0), vec2(0.1), tu) * smoothstep(vec2(0.0), vec2(0.1), 1.0 - tu);
   vec4 tr = texture2D(tTrace, tu);
-  float fil = 0.0;
-  float aigu = clamp(tr.b / max(tr.r, 0.001) * 0.5, 0.0, 1.0);
-
-  // Les pas des 23 : un sillon dans le sable et la neige, que le vent comble ; des ronds sur l'eau.
-  float pied = min(1.0, tr.a) * bord.x * bord.y;
-  col = mix(col, mix(ombre, encre, 0.2), pied * (0.34 + 0.3 * rides) * (1.0 - eau));
-  col = mix(col, lum, pied * 0.5 * eau);
-
-  // Le givre et le mica : des éclats qui s'allument quand le regard ou le temps passe dessus.
-  float tw = 0.5 + 0.5 * sin(uTemps * 1.6 + gg.a * 40.0);
-  float scint = smoothstep(0.88, 0.97, gg.b * (0.62 + 0.38 * tw) + 0.14 * lave);
-  col += vec3(1.0, 0.97, 0.9) * scint * (rides * 0.32 + eau * 0.3) * (1.0 - nuage) * smoothstep(260.0, 80.0, vProf);
-
-  vec3 clair = col;
+  float pied = min(1.0, tr.a) * cadre.x * cadre.y;
+  col *= 1.0 - pied * (0.2 + 0.24 * rides) * (1.0 - eau);
+  col += pied * 0.24 * eau * amb;
 
   // Les chrones : le sol s'enroule sous eux.
   for (int i = 0; i < 8; i++) {
@@ -179,89 +254,98 @@ void main() {
     if (l > 1.4) continue;
     float a = atan(d.y, d.x), bras = sin(a * 3.0 + l * 11.0 - uTemps * 3.2 * sign(r.w));
     float o = smoothstep(1.2, 0.2, l);
-    clair = mix(clair, ombre * 0.8, o * (0.24 + 0.32 * smoothstep(0.1, 0.9, bras)));
-    clair = mix(clair, encre, smoothstep(0.26, 0.05, l) * 0.8);
+    col *= 1.0 - o * (0.3 + 0.36 * smoothstep(0.1, 0.9, bras));
+    col *= 1.0 - smoothstep(0.26, 0.05, l) * 0.8;
   }
 
   // L'ombre du navire.
   if (uNavireO.w > 0.0) {
     vec2 d = (vW.xz - uNavireO.xy) / vec2(uNavireO.z * 0.38, uNavireO.z);
-    float m = smoothstep(1.0, 0.55, length(d)) * uNavireO.w;
-    clair = mix(clair, ombre * 0.82, m * 0.62);
+    col *= 1.0 - smoothstep(1.0, 0.55, length(d)) * uNavireO.w * 0.66;
   }
 
-  // Le furvent : tout s'inverse derrière le front.
-  float t = tempeteA(vW.z);
-  vec3 nuitF = mix(vec3(0.03, 0.027, 0.032), ombre * 0.16, lave * 0.6);
-  nuitF = mix(nuitF, vec3(0.5, 0.36, 0.26), encrage * 0.2);
-  // Le champ dense, enfin allumé : du cuivre au champagne, avec la vitesse.
-  float dense = 1.0 - exp(-tr.r * 0.55), brul = dense * dense;
-  nuitF += mix(vec3(0.66, 0.36, 0.17), vec3(1.0, 0.8, 0.56), aigu * brul) * brul * bord.x * bord.y * 0.82;
-  nuitF += vec3(1.0, 0.72, 0.46) * fil * 0.34;
-  nuitF += vec3(0.9, 0.5, 0.26) * voile * 0.5;
-  nuitF += vec3(0.5, 0.54, 0.68) * uEclair * (0.34 + lave * 0.6 + encrage * 0.5);
-  // La lèvre du front : une crête de poussière claire.
+  // Le furvent : le jour s'en va, et le champ dense s'allume comme du cuivre.
+  float dense = 1.0 - exp(-tr.r * 0.55), aigu = clamp(tr.b / max(tr.r, 0.001) * 0.5, 0.0, 1.0), brul = dense * dense;
+  col += mix(vec3(0.66, 0.36, 0.17), vec3(1.0, 0.8, 0.56), aigu * brul) * brul * cadre.x * cadre.y * t * 1.6;
+  col += vec3(0.5, 0.54, 0.68) * uEclair * t * 1.4 * (0.4 + alb);
   float levre = exp(-pow((vW.z - uFrontT.x) / 18.0, 2.0)) * uFrontT.z;
-  col = mix(clair, nuitF, t);
-  col = mix(col, vec3(0.98, 0.86, 0.7), levre * 0.62 * (0.4 + 0.6 * bruit(vW.xz * vec2(0.04, 0.12) + uTemps * 0.6)));
+  col = mix(col, vec3(1.7, 1.25, 0.86) * (sun + amb) * 0.5, levre * 0.62 * (0.4 + 0.6 * bruit(vW.xz * vec2(0.04, 0.12) + uTemps * 0.6)));
 
-  // La nuit des camps : la carte se couche.
-  if (uNuit > 0.0) {
-    vec3 cnuit = mix(vec3(0.05, 0.075, 0.15), mix(ombre, vec3(0.2, 0.28, 0.46), 0.7) * 0.42, lave);
-    cnuit = mix(cnuit, vec3(0.32, 0.42, 0.6), encrage * 0.3 + fil * 0.3);
-    col = mix(col, cnuit, uNuit * (1.0 - t));
-  }
+  // Le feu du camp.
   if (uFeu.z > 0.0) {
     vec2 d = (vW.xz - uFeu.xy);
-    float l = dot(d, d);
-    float va = 0.92 + 0.08 * sin(uTemps * 11.0) * sin(uTemps * 7.3);
-    col += vec3(1.0, 0.56, 0.24) * uFeu.z * va * (exp(-l / 900.0) * 0.46 + exp(-l / 90.0) * 0.5) * (0.4 + 0.6 * uNuit);
+    float l = dot(d, d), va = 0.92 + 0.08 * sin(uTemps * 11.0) * sin(uTemps * 7.3);
+    col += alb * vec3(1.0, 0.5, 0.2) * uFeu.z * va * (exp(-l / 900.0) * 1.8 + exp(-l / 90.0) * 2.4) * (0.4 + 0.6 * uNuit);
+  }
+
+  // Où se reposer : les zones que le vent épargne s'éclairent, avec un liseré doré. Les mêmes seuils que le camp.
+  if (uAbriV > 0.003) {
+    float ab = max(smoothstep(0.36, 0.46, vVent.z), smoothstep(0.56, 0.46, fv)) * (1.0 - eau) * smoothstep(0.34, 0.14, pente);
+    float lis = ab * (1.0 - ab) * 4.0, rais = smoothstep(0.42, 0.5, abs(fract((vW.x + vW.z) * 0.05 + uTemps * 0.04) - 0.5));
+    vec3 or_ = vec3(1.0, 0.8, 0.42) * (0.3 + dot(amb, vec3(0.33)) + dot(uSoleilCol, vec3(0.1)));
+    col = mix(col, or_, (ab * (0.1 + 0.1 * rais) + lis * 0.62) * uAbriV);
+  }
+
+  // Lire le relief : les courbes de niveau, à la demande.
+  if (uCarte > 0.003) {
+    float hl = h, fin = lignes(hl / pasL, 0.5), fort = lignes(hl / (pasL * 5.0), 0.85);
+    col = mix(col, encre * 0.3, clamp(fin * 0.42 + fort * 0.8, 0.0, 1.0) * 0.72 * smoothstep(1400.0, 300.0, vProf) * uCarte);
   }
 
   // Le bout du monde ne se voit pas de loin : il se défait dans le ciel.
-  col = mix(col, horizon(), smoothstep(uBande - 340.0, uBande - 170.0, vW.z));
-
-  // Le lointain se perd dans le ciel.
-  col = mix(col, brume(vW), smoothstep(uBrouillard * 0.5, uBrouillard * 1.25, vProf));
-  col = mix(col, BLANC_FIN, uReve);
+  col = mix(col, BLANC_FIN, smoothstep(uBande - 340.0, uBande - 170.0, vW.z));
   gl_FragColor = vec4(col, 1.0);
 }`;
 
+function grille(N0, trou) {
+  const pos = [], idx = [], v = (i, j) => (j + N0) * (2 * N0 + 1) + i + N0;
+  for (let j = -N0; j <= N0; j++) for (let i = -N0; i <= N0; i++) pos.push(i, trou ? 1 : 0, j);
+  for (let j = -N0; j < N0; j++) for (let i = -N0; i < N0; i++) {
+    if (trou && i >= -trou && i < trou && j >= -trou && j < trou) continue;
+    idx.push(v(i, j), v(i + 1, j), v(i, j + 1), v(i + 1, j), v(i + 1, j + 1), v(i, j + 1));
+  }
+  const g = new THREE.InstancedBufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx);
+  return g;
+}
+
 export class Terrain {
-  constructor(monde, tex, tTrace, tBruit) {
-    this.pasMaille = 760 / 340;
-    this.pasLoin = 32;
+  constructor(monde, tex, matieres, tTrace, tBruit, commun) {
+    this.niveaux = 7;
     this.u = {
-      tH: { value: tex.tH }, tPal: { value: tex.tPal }, tTrace: { value: tTrace }, tBruit: { value: tBruit }, tVent: { value: tex.tV }, tL: { value: tex.tL },
+      ...commun, tCouleur: { value: matieres.tCouleur }, tRelief: { value: matieres.tRelief },
+      tH: { value: tex.tH }, tPal: { value: tex.tPal }, tMat: { value: tex.tMat }, tTrace: { value: tTrace }, tBruit: { value: tBruit }, tVent: { value: tex.tV }, tL: { value: tex.tL },
       uAnneau: { value: new THREE.Vector2(monde.W, monde.anneau) }, uBande: { value: monde.L },
       uTexel: { value: new THREE.Vector2(1 / monde.nx, 1 / monde.ns) },
-      uCentreMaille: { value: new THREE.Vector2() }, uCentreTrace: { value: new THREE.Vector2() },
-      uDescente: { value: 0 },
+      uCentreTrace: { value: new THREE.Vector2() },
       uFrontT: { value: new THREE.Vector3(-1e6, -1e6, 0) },
       uTemps: { value: 0 }, uNuit: { value: 0 }, uBrouillard: { value: 700 }, uReve: { value: 0 }, uSv: { value: 0 }, uEclair: { value: 0 },
       uFeu: { value: new THREE.Vector3() }, uNavireO: { value: new THREE.Vector4() },
       uRemousT: { value: Array.from({ length: 8 }, () => new THREE.Vector4()) },
-      uSoleil: { value: new THREE.Vector3(...SOLEIL).normalize() },
-      uSoleilC: { value: new THREE.Vector3(-0.62, 0.3, -0.72).normalize() },
-      uVentMoyen: { value: new THREE.Vector3(0, -1, 0) },
+      uCarte: { value: 0 }, uDetail: { value: 1 }, uAbriV: { value: 0 },
     };
-    this.mesh = new THREE.Mesh(new THREE.PlaneGeometry(760, 760, 340, 340).rotateX(-Math.PI / 2),
-      new THREE.ShaderMaterial({ uniforms: this.u, vertexShader: VERT, fragmentShader: FRAG }));
-    this.mesh.frustumCulled = false; this.mesh.renderOrder = 4;
-    // Le lointain : une maille lâche, juste sous la fine, qu'on ne voit qu'à hauteur de Horde.
-    this.uLoin = this.u;
-    this.uLoinPropres = { uCentreMaille: { value: new THREE.Vector2() }, uDescente: { value: 1.4 } };
-    this.loin = new THREE.Mesh(new THREE.PlaneGeometry(5760, 5760, 180, 180).rotateX(-Math.PI / 2),
-      new THREE.ShaderMaterial({ uniforms: this.u, vertexShader: VERT, fragmentShader: FRAG }));
-    this.loin.frustumCulled = false; this.loin.visible = false; this.loin.renderOrder = 5;
+    const mat = new THREE.ShaderMaterial({ uniforms: this.u, vertexShader: VERT, fragmentShader: FRAG });
+    // Le cœur, sans trou, puis des anneaux qui doublent de pas à chaque fois ; ils mordent un peu l'un sur l'autre.
+    const coeur = grille(N / 2 + 2, 0), anneaux = grille(N, N / 2 - 2);
+    this.iC = new THREE.InstancedBufferAttribute(new Float32Array(3), 3);
+    this.iA = new THREE.InstancedBufferAttribute(new Float32Array((this.niveaux - 1) * 3), 3);
+    this.iC.setUsage(THREE.DynamicDrawUsage); this.iA.setUsage(THREE.DynamicDrawUsage);
+    coeur.setAttribute('iNiv', this.iC); coeur.instanceCount = 1;
+    anneaux.setAttribute('iNiv', this.iA); anneaux.instanceCount = this.niveaux - 1;
+    this.coeur = new THREE.Mesh(coeur, mat); this.anneaux = new THREE.Mesh(anneaux, mat);
+    this.coeur.frustumCulled = this.anneaux.frustumCulled = false;
+    this.coeur.renderOrder = 3; this.anneaux.renderOrder = 4;
+    this.mesh = new THREE.Group(); this.mesh.add(this.coeur, this.anneaux);
   }
-  // Après la création des ombres : le lointain partage tout, sauf son centre et sa descente.
-  finir() {
-    this.loin.material.uniforms = { ...this.u, ...this.uLoinPropres };
-  }
+  finir() {}
+  // La maille suit la caméra ; chaque anneau se cale sur le double de son pas pour que rien ne glisse.
   maj(x, s) {
-    const p = this.pasMaille, q = this.pasLoin;
-    this.u.uCentreMaille.value.set(Math.round(x / p) * p, Math.round(s / p) * p);
-    this.uLoinPropres.uCentreMaille.value.set(Math.round(x / q) * q, Math.round(s / q) * q);
+    const c = this.iC.array, a = this.iA.array;
+    c[0] = 1; c[1] = Math.round(x / 2) * 2; c[2] = Math.round(s / 2) * 2;
+    for (let i = 0; i < this.niveaux - 1; i++) {
+      const p = 1 << i, q = 2 * p;
+      a[i * 3] = p; a[i * 3 + 1] = Math.round(x / q) * q; a[i * 3 + 2] = Math.round(s / q) * q;
+    }
+    this.iC.needsUpdate = this.iA.needsUpdate = true;
   }
 }

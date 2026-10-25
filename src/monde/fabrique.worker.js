@@ -21,7 +21,7 @@ function pomper() {
     occupe = false;
     const k = file.shift();
     if (k === undefined) return;
-    const t = fab.tranche(k), hd = demis(t.h), vd = demis(t.v);
+    const t = fab.tranche(k), hd = t.h.slice(), vd = demis(t.v);
     self.postMessage({ ...t, hd, vd }, [t.h.buffer, t.v.buffer, t.l.buffer, hd.buffer, vd.buffer]);
     pomper();
   }, 0);

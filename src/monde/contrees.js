@@ -8,7 +8,7 @@ export const MONDE = { W: 1600, L: 42000, pas: 2, pasVent: 8, pasLum: 5, tranche
 // Tout est plus grand que les marcheurs : le relief, les routes, les monuments.
 export const ECHELLE = { relief: 2, hauteur: 1.5, monument: 2.2 };
 // Le soleil du monde : assez bas pour que le relief et les tours portent de vraies ombres.
-export const SOLEIL = [-0.62, 0.47, -0.5];
+export const SOLEIL = [-0.8, 0.42, 0.42];
 
 const c = (id, nom, f, relief, force, ombre, lumiere, encre, trait, ciel, pasLigne, extra = {}) =>
   ({ id, nom, f, relief, force, ombre, lumiere, encre, trait, ciel, pasLigne, ...extra });
@@ -28,6 +28,27 @@ export const CONTREES = [
 ];
 
 // Les lieux du roman. `f` est la place sur la bande, `dx` l'écart à la route.
+// Les matières du sol, dans l'ordre des tableaux de textures.
+export const COUCHES = ['sable', 'strate', 'falaise', 'gravier', 'neige', 'prairie', 'craquele', 'cendre'];
+export const COUCHE = Object.fromEntries(COUCHES.map((n, i) => [n, i]));
+
+// Le temps qu'il fait dans chaque contrée, et de quoi elle est faite.
+// trouble : poussière dans l'air ; teinte : sa couleur ; voile : ciel couvert ; brume : densité au ras du sol ;
+// sols, roche, neige : ses matières (voir rendu/matieres.js) ; raide : la pente où la roche perce ; pris : clarté de la roche.
+export const CLIMATS = {
+  aberlaas: { trouble: 0.9, teinte: '#e8f0ff', voile: 0.05, soleil: 1, brume: 0.00026, sols: ['neige', 'neige'], roche: 'strate', neige: 1, raide: 0.3, pris: 1.1, expo: 0.74 },
+  choon: { trouble: 1.4, teinte: '#fff2dc', voile: 0.1, soleil: 1, brume: 0.00032, sols: ['prairie', 'gravier'], roche: 'falaise', neige: 0, raide: 0.32, pris: 0.9, expo: 1 },
+  lapsane: { trouble: 1.6, teinte: '#f2f6ff', voile: 0.22, soleil: 0.95, brume: 0.0005, sols: ['sable', 'craquele'], roche: 'strate', neige: 0, raide: 0.3, pris: 0.9, expo: 1 },
+  leergeem: { trouble: 3.2, teinte: '#ffc98c', voile: 0.02, soleil: 1.08, brume: 0.00036, sols: ['sable', 'sable'], roche: 'strate', neige: 0, raide: 0.5, pris: 1, expo: 0.8 },
+  alticcio: { trouble: 2.6, teinte: '#ffbf9a', voile: 0.08, soleil: 1.05, brume: 0.00036, sols: ['gravier', 'craquele'], roche: 'strate', neige: 0, raide: 0.16, pris: 1.2, expo: 0.84 },
+  malachites: { trouble: 1.7, teinte: '#dcf5e4', voile: 0.3, soleil: 0.9, brume: 0.0007, sols: ['prairie', 'gravier'], roche: 'falaise', neige: 0, raide: 0.2, pris: 0.7, expo: 1.06 },
+  egine: { trouble: 2.2, teinte: '#e8dcff', voile: 0.05, soleil: 1.05, brume: 0.00032, sols: ['craquele', 'sable'], roche: 'falaise', neige: 0, raide: 0.3, pris: 0.9, expo: 0.8 },
+  scoverr: { trouble: 2, teinte: '#fff0c4', voile: 0.14, soleil: 1, brume: 0.00042, sols: ['prairie', 'gravier'], roche: 'strate', neige: 0, raide: 0.22, pris: 1, expo: 0.98 },
+  norska: { trouble: 1, teinte: '#e4ecff', voile: 0.46, soleil: 0.85, brume: 0.0008, sols: ['neige', 'gravier'], roche: 'falaise', neige: 0.8, raide: 0.14, pris: 0.55, expo: 0.92 },
+  krafla: { trouble: 5, teinte: '#d6a58a', voile: 0.62, soleil: 0.8, brume: 0.0018, sols: ['cendre', 'gravier'], roche: 'falaise', neige: 0, raide: 0.14, pris: 0.3, expo: 1.2 },
+  amont: { trouble: 3, teinte: '#ffffff', voile: 0.5, soleil: 1, brume: 0.0016, sols: ['cendre', 'sable'], roche: 'falaise', neige: 0, raide: 0.3, pris: 1, expo: 1 },
+};
+
 // Ce qui flotte dans l'air, vu à hauteur de Horde. taille : grains ; long : traînée ; chute : gravité ; vif : additif.
 export const AIRS = {
   aberlaas: { c: '#f4fbff', taille: 1, long: 0.5, chute: 0.8 },
@@ -45,7 +66,7 @@ export const AIRS = {
 
 // Ce qui pousse ou traîne sur chaque sol : [forme, chance par case, tailles, couleur, options].
 export const SEMIS = {
-  banquise: [['eclat', 0.34, [1, 3.6], '#d5e6ec'], ['rocher', 0.22, [0.7, 2.2], '#a6bcc6'], ['eclat', 0.05, [4, 7], '#bcd6e0']],
+  banquise: [['glacon', 0.2, [1.4, 4.4], '#d5e6ec'], ['rocher', 0.16, [0.7, 2.2], '#a6bcc6'], ['glacon', 0.04, [5, 9], '#bcd6e0']],
   coteaux: [['touffe', 0.95, [0.8, 1.7], '#8aa65f'], ['arbuste', 0.2, [1.1, 2.7], '#5e8460'], ['rocher', 0.2, [0.6, 2], '#9c9b84'], ['touffe', 0.3, [0.8, 1.3], '#c4b768']],
   flaque: [['roseau', 0.5, [1.2, 2.6], '#7f9f7a', { eau: true }], ['rocher', 0.14, [0.5, 1.5], '#8ea9a2', { eau: true }], ['cote', 0.012, [3, 5], '#c9cfc0', { eau: true }]],
   dunes: [['rocher', 0.09, [0.7, 2.2], '#b78a5a'], ['arbuste', 0.08, [0.6, 1.3], '#8a7a4c'], ['cote', 0.012, [3, 6], '#e6d9bd'], ['touffe', 0.08, [0.5, 1], '#a89a5a']],
@@ -53,7 +74,7 @@ export const SEMIS = {
   massif: [['eclat', 0.4, [1, 4], '#58b89a'], ['rocher', 0.3, [0.8, 2.6], '#3d7f70'], ['arbuste', 0.14, [1.2, 2.6], '#2d6a56'], ['touffe', 0.4, [0.6, 1.2], '#7fbf90']],
   plateforme: [['eclat', 0.1, [0.8, 3], '#efe9f3'], ['rocher', 0.08, [0.4, 1.3], '#a79bc0'], ['eclat', 0.012, [6, 10], '#cfc4dc']],
   terrasses: [['touffe', 0.9, [0.8, 1.6], '#b0a35e'], ['rocher', 0.26, [0.6, 2.2], '#8c8460'], ['arbuste', 0.08, [0.9, 1.7], '#747449']],
-  cimes: [['rocher', 0.36, [0.8, 3], '#6e88b0'], ['eclat', 0.3, [1, 3.4], '#e4edf5']],
+  cimes: [['rocher', 0.36, [0.8, 3], '#6e88b0'], ['glacon', 0.2, [1.4, 4], '#e4edf5']],
   cendres: [['rocher', 0.42, [0.7, 3], '#3a2c2a'], ['eclat', 0.12, [1, 3], '#2a1f1e']],
   vide: [],
 };
