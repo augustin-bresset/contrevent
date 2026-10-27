@@ -3,7 +3,7 @@
 import * as THREE from 'three';
 import { GLSL_COMMUN } from './communs.js';
 
-const COTE = 290, PAS = 1.15;
+const COTE = 360, PAS = 0.78;
 
 export class Herbe {
   constructor(u) {
@@ -38,7 +38,7 @@ export class Herbe {
           float patch_ = texture2D(tBruit, pos * 0.0042).g;
           float dens = reg.a * (0.46 + 1.4 * smoothstep(0.36, 0.6, patch_));
           if (r.b > dens || hs < 0.08 || dc > 1.0) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
-          float H = (0.8 + 1.5 * r.a) * (0.7 + 0.9 * patch_) * (1.0 - smoothstep(0.8, 1.0, dc)) * mix(1.0, 0.3, uPres);
+          float H = (0.6 + 1.1 * r.a) * (0.7 + 0.9 * patch_) * (1.0 - smoothstep(0.8, 1.0, dc)) * mix(1.0, 0.5, uPres);
           vec2 w = texture2D(tVent, uv).xy * uRespirH; float f = length(w);
           vec2 dir = f > 1e-3 ? w / f : vec2(0.0, -1.0);
           // La rafale : une onde qui descend le vent, avec deux longueurs pour qu'elle ne se répète pas.
@@ -50,13 +50,13 @@ export class Herbe {
           vec2 dh = pos - uHordeH; float qh = exp(-dot(dh, dh) / 22.0);
           cour += normalize(dh + 1e-4) * qh * 1.25;
 
-          float y = position.y, a = r.r * 6.283, l = mix(0.5, 0.1, uPres) * (0.7 + r.g);
+          float y = position.y, a = r.r * 6.283, l = mix(0.2, 0.09, uPres) * (0.7 + r.g);
           vec2 cote = vec2(cos(a), sin(a)) * position.x * l * (1.0 + 0.4 * length(cour));
           vec2 sol = pos + cote + cour * H * y * y;
           vec3 w3 = vec3(sol.x, hs + y * H * (1.0 - 0.34 * min(1.0, length(cour)) * y), -sol.y);
           vec3 ton = texture2D(tPal, vec2(6.5 / 7.0, sv)).rgb, lum = texture2D(tPal, vec2(1.5 / 7.0, sv)).rgb;
           float var = 0.82 + 0.3 * r.g;
-          vC = mix(ton * 0.92, mix(ton, lum, 0.22 + 0.68 * vague), y) * var;
+          vC = mix(ton * 0.5, mix(ton, lum, 0.14 + 0.5 * vague), y) * var;
           vP = vec3(w3.x, w3.y, -w3.z); vT = y; vL = 0.45 + 0.5 * y;
           vec4 mv = viewMatrix * vec4(w3, 1.0); vProf = -mv.z;
           gl_Position = projectionMatrix * mv;
@@ -64,7 +64,14 @@ export class Herbe {
       fragmentShader: /* glsl */`
         precision highp float; varying vec3 vC, vP; varying float vT, vL, vProf;
         ${GLSL_COMMUN}
-        void main() { gl_FragColor = vec4(atmosphere(vC, vL, vP, vProf), 1.0); }`,
+        void main() {
+          vec3 Q = vec3(vP.x, vP.y, -vP.z), n = normalize(vec3(uSoleil.x * 0.3, 1.0, uSoleil.z * 0.3));
+          vec3 c = eclairer(vC * vC, n, Q, 0.6, soleilRelief(Q, 0.0), mix(0.4, 1.0, vL));
+          // La lumière qui traverse le brin, vue à contre-jour.
+          vec3 v = normalize(cameraPosition - Q);
+          c += vC * vC * uSoleilCol * pow(max(dot(-v, uSoleil), 0.0), 3.0) * 0.5 * vL;
+          gl_FragColor = vec4(c, 1.0);
+        }`,
     }));
     this.mesh.frustumCulled = false; this.mesh.renderOrder = 1;
   }

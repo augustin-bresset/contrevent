@@ -1,138 +1,234 @@
-// Ce qui traîne et pousse sur le sol, tiré d'une grille à graine autour de la Horde.
-// Vu de haut, c'est du grain sur la carte ; à hauteur de Horde, c'est le paysage.
+// Ce qui traîne et pousse sur le sol, tiré d'une grille à graine autour de la Horde. Trois grilles : le menu sous les pieds,
+// le paysage autour, et au loin les seuls grands blocs, pour que le désert ne s'arrête pas net.
+// Les pierres sont des scans : elles s'enfoncent dans le sol, et le vent dépose sur elles ce qu'il transporte.
 import * as THREE from 'three';
-import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { SEMIS } from '../monde/contrees.js';
-import { GLSL_COMMUN } from './communs.js';
+import { GLSL_COMMUN, GLSL_OMBRE, GLSL_GLACE } from './communs.js';
+import { geometrie } from './monuments.js';
+import { ROCHERS } from './rochers-maillage.js';
 
-const MAX = 2600;
-const pale = (l, h, a) => new THREE.PlaneGeometry(l, h, 1, 2).translate(0, h / 2, 0).rotateY(a);
-const lames = (n, lg, h) => {
+const MAX = 7000;
+const lire = (b64, C) => { const s = atob(b64), o = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) o[i] = s.charCodeAt(i); return new C(o.buffer); };
+
+// Un brin : large au pied, pointu, courbé sous son propre poids.
+function brin(l, h, a, ploie) {
+  const g = new THREE.PlaneGeometry(l, h, 1, 3).translate(0, h / 2, 0), p = g.getAttribute('position');
+  for (let i = 0; i < p.count; i++) {
+    const t = p.getY(i) / h;
+    p.setXYZ(i, p.getX(i) * (1 - t * 0.92), p.getY(i) * (1 - ploie * t * t * 0.3), ploie * t * t * h * 0.5);
+  }
+  return g.rotateY(a).toNonIndexed();
+}
+const nu = (g, bois) => {
+  const q = g.index ? g.toNonIndexed() : g; q.deleteAttribute('uv'); q.deleteAttribute('normal');
+  q.setAttribute('aBois', new THREE.BufferAttribute(new Float32Array(q.getAttribute('position').count).fill(bois), 1));
+  return q;
+};
+function touffe(n, l, h) {
   const g = [];
   for (let i = 0; i < n; i++) {
-    const q = pale(lg, h * (0.6 + 0.4 * ((i * 7) % 5) / 4), i * 2.4).rotateZ((i - n / 2) * 0.14).rotateX((i % 3 - 1) * 0.14).translate((i % 3 - 1) * 0.14, 0, ((i * 2) % 3 - 1) * 0.14);
-    g.push(q.toNonIndexed());
+    const a = i * 2.4, r = 0.2 * Math.sqrt(i / n), b = brin(l, h * (0.65 + 0.35 * (((i * 7) % 5) / 4)), a, 0.5 + 0.5 * ((i * 3) % 4) / 3);
+    g.push(nu(b.translate(Math.cos(a) * r, 0, Math.sin(a) * r), 0));
   }
-  return mergeGeometries(g.map((q) => { q.deleteAttribute('uv'); q.deleteAttribute('normal'); return q; }));
-};
-const brut = (g) => { const q = g.index ? g.toNonIndexed() : g; q.deleteAttribute('uv'); q.deleteAttribute('normal'); return q; };
-// Une bosse de pierre : une sphère fine, déformée, aux normales lisses.
-const galet = (r, d, k, f) => {
-  const g = mergeVertices(brut(new THREE.IcosahedronGeometry(r, d)), 1e-4), p = g.getAttribute('position');
-  for (let i = 0; i < p.count; i++) {
-    const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
-    const q = 1 + k * (Math.sin(x * f + 1.3) * Math.cos(y * f * 1.3) + 0.6 * Math.sin(z * f * 2.1 + y * f) + 0.3 * Math.sin(x * f * 3.7 + z * f * 3.1));
-    p.setXYZ(i, x * q, y * q, z * q);
-  }
-  return g;
-};
-const FORMES = {
-  rocher: () => galet(1, 3, 0.2, 2.3).scale(1, 0.62, 0.85),
-  eclat: () => brut(new THREE.ConeGeometry(0.42, 2, 4, 1).translate(0, 1, 0).rotateZ(0.12)),
-  touffe: () => lames(7, 0.11, 1),
-  roseau: () => lames(5, 0.07, 1.6),
-  arbuste: () => mergeGeometries([
-    brut(galet(0.7, 2, 0.14, 4.5).translate(0, 0.72, 0)), brut(galet(0.5, 2, 0.14, 6).translate(0.5, 0.46, 0.1)),
-    brut(galet(0.46, 2, 0.14, 6).translate(-0.42, 0.44, -0.2)), brut(new THREE.CylinderGeometry(0.05, 0.08, 0.5, 6).translate(0, 0.2, 0)),
-  ]),
-  // Les côtes d'une bête ou d'une épave, à demi enterrées.
-  cote: () => {
-    const g = [];
-    for (let i = 0; i < 6; i++) {
-      const q = brut(new THREE.TorusGeometry(0.9 - Math.abs(i - 2.5) * 0.08, 0.05, 3, 8, Math.PI).rotateY(Math.PI / 2).translate(0, -0.08, -1.2 + i * 0.48));
-      g.push(q);
+  return mergeGeometries(g);
+}
+// Un buisson que le vent a peigné : du bois sec, tout penché du même côté, et ce qu'il reste de feuilles au bout.
+function buisson() {
+  const g = []; let rnd = 12345;
+  const r = () => { rnd = (rnd * 16807) % 2147483647; return rnd / 2147483647; };
+  const branche = (o, d, l, e, n) => {
+    const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), d);
+    g.push(nu(new THREE.CylinderGeometry(e * 0.6, e, l, 3, 1).translate(0, l / 2, 0).applyQuaternion(q).translate(o.x, o.y, o.z), 1));
+    const b = o.clone().addScaledVector(d, l);
+    if (n === 0) {
+      for (let i = 0; i < 7; i++) g.push(nu(new THREE.PlaneGeometry(0.09, 0.06).rotateX(r() * 3).rotateY(r() * 6).translate(b.x + (r() - 0.5) * 0.22, b.y + (r() - 0.5) * 0.15, b.z + (r() - 0.5) * 0.22), 0));
+      return;
     }
-    return mergeGeometries(g);
-  },
-};
+    for (let i = 0; i < 2 + (n > 1 ? 1 : 0); i++) {
+      const v = d.clone().add(new THREE.Vector3((r() - 0.5) * 1.1, r() * 0.4, (r() - 0.5) * 1.1 + 0.25)).normalize();
+      branche(b, v, l * (0.62 + r() * 0.18), e * 0.6, n - 1);
+    }
+  };
+  for (let i = 0; i < 4; i++) { const a = i * 1.7; branche(new THREE.Vector3(Math.cos(a) * 0.05, 0, Math.sin(a) * 0.05), new THREE.Vector3(Math.cos(a) * 0.4, 1, Math.sin(a) * 0.4 + 0.25).normalize(), 0.52, 0.05, 3); }
+  return mergeGeometries(g);
+}
+// Les côtes d'une bête ou d'une épave, à demi enterrées.
+function cotes() {
+  const g = [];
+  for (let i = 0; i < 6; i++) g.push(nu(new THREE.TorusGeometry(0.9 - Math.abs(i - 2.5) * 0.08, 0.05, 3, 8, Math.PI).rotateY(Math.PI / 2).translate(0, -0.08, -1.2 + i * 0.48), 1));
+  return mergeGeometries(g);
+}
+function pierre(cle, lod, couche) {
+  const m = ROCHERS[cle][lod], g = new THREE.BufferGeometry();
+  const pos = lire(m.p, Int16Array), uv = lire(m.u, Uint16Array), nor = lire(m.n, Int8Array);
+  const P = new Float32Array(pos.length); for (let i = 0; i < pos.length; i++) P[i] = pos[i] / 32767 * 4;
+  g.setAttribute('position', new THREE.BufferAttribute(P, 3));
+  g.setAttribute('aU', new THREE.BufferAttribute(uv, 2, true));
+  g.setAttribute('normal', new THREE.BufferAttribute(nor, 3, true));
+  g.setAttribute('aCouche', new THREE.BufferAttribute(new Float32Array(P.length / 3).fill(couche), 1));
+  g.setIndex(new THREE.BufferAttribute(lire(m.i, Uint16Array), 1));
+  return g;
+}
+const BOULES = ['b3', 'b4', 'b5'], FLECHES = ['ai', 'fl'], COUCHE_P = { b3: 0, b4: 1, b5: 2, ai: 3, fl: 4 };
 const SOUPLES = new Set(['touffe', 'roseau']);
 
 export class Semis {
-  constructor(monde, u) {
-    this.monde = monde; this.u = u; this.groupe = new THREE.Group(); this.cle = '';
-    this.m = {};
-    const mat = new THREE.ShaderMaterial({
-      uniforms: u, side: THREE.DoubleSide,
+  constructor(monde, u, matieres) {
+    this.monde = monde; this.u = u; this.groupe = new THREE.Group(); this.cle = ''; this.m = {};
+    this.uC = { value: new THREE.Vector2() };
+    const uP = { ...u, uCentreS: this.uC, tRocC: { value: matieres.tRocC }, tRocN: { value: matieres.tRocN } };
+    const mPierre = new THREE.ShaderMaterial({
+      uniforms: uP,
       vertexShader: /* glsl */`
-        attribute vec3 iCol; attribute float iSouple;
-        uniform float uTemps; varying vec3 vP, vC, vN; varying float vProf;
+        attribute vec3 iCol; attribute vec2 aU; attribute float aCouche, iR; uniform sampler2D tH; uniform vec2 uAnneau, uCentreS;
+        varying vec3 vP, vC, vA, vB, vD; varying vec2 vU; varying float vK, vHaut, vT;
         void main() {
-          vec4 w = modelMatrix * instanceMatrix * vec4(position, 1.0);
+          // Au bord de sa grille, une pierre s'enfonce peu à peu : rien n'apparaît ni ne disparaît d'un coup.
+          float kf = smoothstep(iR, iR * 0.76, distance(instanceMatrix[3].xz, uCentreS));
+          vec4 w = instanceMatrix * vec4(position * kf, 1.0); mat3 m = mat3(instanceMatrix);
+          vec3 a = m[0], b = m[1], d = m[2]; vT = length(a);
+          vA = a / vT; vB = b / length(b); vD = d / length(d);
+          vP = w.xyz; vC = iCol; vU = aU; vK = aCouche;
+          vHaut = w.y - max(texture2D(tH, vec2(w.x, -w.z) / uAnneau).r, 0.0);
+          gl_Position = projectionMatrix * viewMatrix * w;
+        }`,
+      fragmentShader: /* glsl */`
+        precision highp float; precision highp sampler2DArray;
+        uniform sampler2DArray tRocC, tRocN;
+        varying vec3 vP, vC, vA, vB, vD; varying vec2 vU; varying float vK, vHaut, vT;
+        ${GLSL_COMMUN}
+        ${GLSL_OMBRE}
+        void main() {
+          vec3 o = texture(tRocN, vec3(vU, vK)).xyz * 2.0 - 1.0;
+          vec3 n = normalize(vA * o.x + vB * o.y + vD * o.z);
+          vec3 alb = texture(tRocC, vec3(vU, vK)).rgb * 1.7 * vC * vC;
+          float dv = clamp(-vP.z / uBande, 0.0, 1.0);
+          vec3 lum = palette(1, dv); lum *= lum;
+          // Ce que le vent dépose : sur les faces du dessus, et au pied, où le sol remonte sur la pierre.
+          float n0 = fbm3(vP.xz * 1.3 + vP.y);
+          float depot = smoothstep(0.6, 0.92, n.y + (n0 - 0.5) * 0.7);
+          float pied = smoothstep(0.0, 0.2 + vT * 0.16, vHaut + (n0 - 0.5) * vT * 0.2);
+          alb = mix(alb, lum * 0.74, max(depot * 0.8, 1.0 - pied));
+          float occl = mix(0.34, 1.0, smoothstep(0.0, 0.5 + vT * 0.4, vHaut));
+          gl_FragColor = vec4(eclairer(alb, n, vP, 0.74, soleilVu(vP, gl_FragCoord.xy) * soleilRelief(vP, vHaut), occl), 1.0);
+        }`,
+    });
+    const mVif = new THREE.ShaderMaterial({
+      uniforms: { ...u, uCentreS: this.uC }, side: THREE.DoubleSide,
+      vertexShader: /* glsl */`
+        attribute vec3 iCol; attribute float iSouple, aBois, iR;
+        uniform float uTemps; uniform vec2 uCentreS; varying vec3 vP, vC; varying float vB, vH;
+        void main() {
+          float kf = smoothstep(iR, iR * 0.76, distance(instanceMatrix[3].xz, uCentreS));
+          vec4 w = instanceMatrix * vec4(position * kf, 1.0);
           float h = iSouple * max(position.y, 0.0);
           w.z += h * (0.2 + 0.1 * sin(uTemps * 2.1 + w.x * 0.21 + w.z * 0.17));
           w.x += h * 0.06 * sin(uTemps * 1.7 + w.z * 0.3);
-          vP = w.xyz; vC = iCol; vN = mat3(modelMatrix) * mat3(instanceMatrix) * normal;
-          vec4 mv = viewMatrix * w; vProf = -mv.z;
-          gl_Position = projectionMatrix * mv;
+          vP = w.xyz; vC = iCol; vB = aBois; vH = position.y;
+          gl_Position = projectionMatrix * viewMatrix * w;
         }`,
       fragmentShader: /* glsl */`
-        precision highp float; varying vec3 vP, vC, vN; varying float vProf;
+        precision highp float; varying vec3 vP, vC; varying float vB, vH;
         ${GLSL_COMMUN}
+        ${GLSL_OMBRE}
         void main() {
-          vec3 n = normalize(vN);
-          if (!gl_FrontFacing) n = -n;
-          float l = clamp(dot(n, uSoleil), 0.0, 1.0);
-          float grain = fbm3(vP.xz * 2.4 + vP.y * 3.0);
-          float haut = 0.5 + 0.5 * n.y;
-          vec3 c = vC * (0.74 + 0.5 * grain) * (mix(vec3(0.5, 0.53, 0.62), vec3(0.74), haut) + vec3(0.72, 0.68, 0.6) * l);
-          gl_FragColor = vec4(atmosphere(c, l, vec3(vP.x, vP.y, -vP.z), vProf), 1.0);
+          vec3 n = normalize(cross(dFdx(vP), dFdy(vP)));
+          if (n.y < 0.0) n = -n;
+          n = normalize(n + vec3(0.0, 0.9, 0.0));
+          vec3 alb = mix(vC * vC, vec3(0.07, 0.05, 0.035), vB) * (0.7 + 0.6 * hash(floor(vP.xz * 3.0)));
+          vec3 c = eclairer(alb, n, vP, 0.7, soleilVu(vP, gl_FragCoord.xy) * soleilRelief(vP, 0.0), mix(0.4, 1.0, clamp(vH, 0.0, 1.0)));
+          gl_FragColor = vec4(c, 1.0);
         }`,
     });
-    for (const [nom, f] of Object.entries(FORMES)) {
-      const g = f(); g.computeVertexNormals();
-      const col = new THREE.InstancedBufferAttribute(new Float32Array(MAX * 3), 3);
-      const so = new THREE.InstancedBufferAttribute(new Float32Array(MAX).fill(SOUPLES.has(nom) ? 1 : 0), 1);
-      g.setAttribute('iCol', col); g.setAttribute('iSouple', so);
+    // Les éclats de glace : les mêmes prismes que les orgues d'Aberlaas, en petit.
+    const mGlace = new THREE.ShaderMaterial({
+      uniforms: { ...u, uCentreS: this.uC },
+      vertexShader: /* glsl */`
+        attribute vec4 aI; attribute float iR; uniform vec2 uCentreS; varying vec3 vP; varying vec2 vI;
+        void main() {
+          float kf = smoothstep(iR, iR * 0.76, distance(instanceMatrix[3].xz, uCentreS));
+          vec4 w = instanceMatrix * vec4(position * kf, 1.0);
+          vP = w.xyz; vI = aI.xy;
+          gl_Position = projectionMatrix * viewMatrix * w;
+        }`,
+      fragmentShader: /* glsl */`
+        precision highp float; varying vec3 vP; varying vec2 vI;
+        ${GLSL_COMMUN}
+        ${GLSL_OMBRE}
+        ${GLSL_GLACE}
+        void main() { gl_FragColor = vec4(glace(vP, normalize(cross(dFdx(vP), dFdy(vP))), vI.x, vI.y, soleilVu(vP, gl_FragCoord.xy) * soleilRelief(vP, 0.0)), 1.0); }`,
+    });
+    const faire = (nom, g, mat, porteOmbre, souple = 0) => {
+      const col = new THREE.InstancedBufferAttribute(new Float32Array(MAX * 3), 3), so = new THREE.InstancedBufferAttribute(new Float32Array(MAX).fill(souple), 1);
+      const ir = new THREE.InstancedBufferAttribute(new Float32Array(MAX), 1);
+      g.setAttribute('iCol', col); g.setAttribute('iSouple', so); g.setAttribute('iR', ir);
       const im = new THREE.InstancedMesh(g, mat, MAX);
       im.frustumCulled = false; im.count = 0; im.renderOrder = 0;
-      if (nom === 'rocher' || nom === 'eclat' || nom === 'arbuste') im.layers.enable(1);
-      this.groupe.add(im);
-      this.m[nom] = { im, col, n: 0 };
-    }
-    this.o = new THREE.Object3D();
-    this.c = new THREE.Color();
-    this.tons = {};
+      if (porteOmbre) im.layers.enable(1);
+      this.groupe.add(im); this.m[nom] = { im, col, ir, n: 0 };
+    };
+    for (const c of [...BOULES, ...FLECHES]) for (const l of [0, 1]) faire(`${c}${l}`, pierre(c, l, COUCHE_P[c]), mPierre, true);
+    for (const c of ['glaceB', 'glaceC']) for (const l of [0, 1]) faire(`${c}${l}`, geometrie(c, l), mGlace, true);
+    faire('touffe', touffe(14, 0.1, 1), mVif, false, 1);
+    faire('roseau', touffe(9, 0.07, 1.7), mVif, false, 1);
+    faire('arbuste', buisson(), mVif, true);
+    faire('cote', cotes(), mVif, false);
+    this.o = new THREE.Object3D(); this.tons = {};
   }
   ton(hex) { return this.tons[hex] || (this.tons[hex] = new THREE.Color(hex).convertLinearToSRGB()); }
   graine(a, b, k) { let h = Math.imul(a * 73856093 ^ b * 19349663 ^ k * 83492791 ^ this.monde.graine, 1540483477); h ^= h >>> 15; h = Math.imul(h, 739982445); return ((h ^ (h >>> 13)) >>> 0) / 4294967296; }
 
-  case(i, j, cote, echT, regle) {
+  case(i, j, cote, echT, regle, cx, cs, grands, R) {
     const { monde: M } = this, x0 = i * cote, s0 = j * cote, c = M.contreeA(s0);
     const table = SEMIS[c.relief] || [];
     for (let k = 0; k < table.length; k++) {
       const [forme, chance, [t0, t1], ton, opt] = table[k];
-      if (this.graine(i, j, k + regle * 31) > chance) continue;
-      const q = this.m[forme];
-      if (q.n >= MAX) continue;
+      if (grands && forme !== 'rocher' && forme !== 'eclat' && forme !== 'glacon') continue;
+      if (this.graine(i, j, k + regle * 31) > chance * (grands ? 0.5 : 1)) continue;
       const x = x0 + this.graine(i, j, k + 11) * cote, s = s0 + this.graine(i, j, k + 23) * cote;
       if (x < 0 || x > M.W || s < 0 || s > M.L) continue;
+      if (Math.hypot(x - cx, s - cs) > R) continue;
+      if (M.plein(x, s, 3)) continue;
       const hb = M.h(x, s);
       if (opt?.eau ? (hb > 0.25 || hb < -1.5) : hb < 0.12) continue;
       if (Math.abs(M.h(x + 1.5, s) - M.h(x - 1.5, s)) + Math.abs(M.h(x, s + 1.5) - M.h(x, s - 1.5)) > 3.6) continue;
       const taille = (t0 + (t1 - t0) * this.graine(i, j, k + 37) ** 2) * echT;
       if (taille > 2 && Math.abs(x - M.xRoute(s)) < 6) continue;
-      const o = this.o;
-      o.position.set(x, Math.max(hb, 0) - taille * 0.06, -s);
-      o.rotation.set((this.graine(i, j, k + 41) - 0.5) * 0.3, this.graine(i, j, k + 43) * 6.28, (this.graine(i, j, k + 47) - 0.5) * 0.3);
-      o.scale.setScalar(taille); o.updateMatrix();
+      const q0 = this.graine(i, j, k + 61);
+      const proche = Math.hypot(x - cx, s - cs) < 280, l = proche ? 0 : 1;
+      const nom = forme === 'rocher' ? `${BOULES[Math.floor(q0 * 3)]}${l}` : forme === 'eclat' ? `${FLECHES[Math.floor(q0 * 2)]}${l}` : forme === 'glacon' ? `glace${q0 < 0.5 ? 'C' : 'B'}${l}` : forme;
+      const q = this.m[nom];
+      if (q.n >= MAX) continue;
+      const o = this.o, glacon = forme === 'glacon', eclat = forme === 'eclat', pierre = eclat || forme === 'rocher' || glacon;
+      o.position.set(x, Math.max(hb, 0) - taille * (pierre ? 0.14 : 0.04), -s);
+      o.rotation.set((this.graine(i, j, k + 41) - 0.5) * (eclat ? 0.16 : 0.3), this.graine(i, j, k + 43) * 6.28, (this.graine(i, j, k + 47) - 0.5) * (eclat ? 0.16 : 0.3));
+      o.scale.setScalar(glacon ? taille * 0.1 : eclat ? taille * 0.52 : taille); o.updateMatrix();
       q.im.setMatrixAt(q.n, o.matrix);
       const t = this.ton(ton), v = 0.86 + this.graine(i, j, k + 53) * 0.28;
-      q.col.setXYZ(q.n, t.r * v, t.g * v, t.b * v);
+      q.col.setXYZ(q.n, t.r * v, t.g * v, t.b * v); q.ir.setX(q.n, R);
       q.n++;
     }
   }
   maj(x, s) {
-    const C = 24, F = 6, ci = Math.floor(x / 12), cj = Math.floor(s / 12), cle = ci + ':' + cj;
+    const C = 24, F = 8, L = 120, ci = Math.floor(x / 12), cj = Math.floor(s / 12), cle = ci + ':' + cj;
+    this.uC.value.set(x, -s);
     if (cle === this.cle) return;
     this.cle = cle;
     for (const q of Object.values(this.m)) q.n = 0;
-    // Une grille large pour le paysage, une fine et plus menue pour ce qui est tout près.
-    const ii = Math.floor(x / C), jj = Math.floor(s / C);
-    for (let j = jj - 14; j <= jj + 28; j++) for (let i = ii - 19; i <= ii + 19; i++) this.case(i, j, C, 1.4, 0);
-    const fi = Math.floor(x / F), fj = Math.floor(s / F);
-    for (let j = fj - 12; j <= fj + 24; j++) for (let i = fi - 14; i <= fi + 14; i++) this.case(i, j, F, 0.5, 1);
+    // Des disques, pas des rectangles, tous centrés sur la Horde : le menu sous ses pas, le paysage autour, les grands blocs jusqu'à l'horizon.
+    const grille = (cote, R, ech, regle, grands) => {
+      const n = Math.ceil(R / cote), i0 = Math.floor(x / cote), j0 = Math.floor(s / cote);
+      for (let j = j0 - n; j <= j0 + n; j++) for (let i = i0 - n; i <= i0 + n; i++) this.case(i, j, cote, ech, regle, x, s, grands, R);
+    };
+    grille(L, 3000, 3.4, 2, true);
+    grille(C, 640, 1.4, 0, false);
+    grille(F, 190, 0.5, 1, false);
     for (const q of Object.values(this.m)) {
-      q.im.count = q.n; q.im.instanceMatrix.needsUpdate = true; q.col.needsUpdate = true;
+      const im = q.im;
+      im.count = q.n; im.instanceMatrix.clearUpdateRanges(); im.instanceMatrix.addUpdateRange(0, q.n * 16); im.instanceMatrix.needsUpdate = true;
+      q.col.clearUpdateRanges(); q.col.addUpdateRange(0, q.n * 3); q.col.needsUpdate = true;
+      q.ir.clearUpdateRanges(); q.ir.addUpdateRange(0, q.n); q.ir.needsUpdate = true;
     }
   }
 }
