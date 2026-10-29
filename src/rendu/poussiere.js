@@ -24,14 +24,14 @@ export class Poussiere {
           vec4 mv = modelViewMatrix * vec4(e.x, h + 1.0 + id * id * 42.0, -e.y, 1.0);
           float v = length(e.xy - e.zw);
           vA = (0.25 + 0.75 * id) * clamp(v * 5.0, 0.0, 1.0);
-          gl_PointSize = uPx * (1.0 + id * 2.4) * (260.0 / -mv.z);
+          gl_PointSize = min(uPx * (1.0 + id * 2.4) * (260.0 / -mv.z), uPx * 3.2);
           gl_Position = projectionMatrix * mv;
         }`,
       fragmentShader: /* glsl */`
         uniform vec3 uCouleur; uniform float uForce; varying float vA;
         void main() {
           float d = length(gl_PointCoord - 0.5) * 2.0;
-          gl_FragColor = vec4(uCouleur, smoothstep(1.0, 0.2, d) * vA * uForce);
+          gl_FragColor = vec4(uCouleur, smoothstep(1.0, 0.2, d) * vA * uForce * 0.5);
         }`,
     }));
     this.mesh.frustumCulled = false; this.mesh.renderOrder = 6;

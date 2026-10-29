@@ -54,7 +54,7 @@ export class Souffle {
     g.instanceCount = cote * cote;
     this.u = {
       ...lignes.commun, tGrain: { value: null }, tH: { value: tH },
-      uRegard: { value: 0 }, uTaille: { value: 1 }, uLong: { value: 0.6 }, uCouleur: { value: new THREE.Color(1, 1, 1) }, uAsp: { value: 1 },
+      uRegard: { value: 0 }, uTaille: { value: 1 }, uLong: { value: 0.6 }, uCouleur: { value: new THREE.Color(1, 1, 1) }, uClair: { value: new THREE.Color(1, 1, 1) }, uAsp: { value: 1 },
     };
     this.mesh = new THREE.Mesh(g, new THREE.ShaderMaterial({
       uniforms: this.u, transparent: true, depthWrite: false, depthTest: true,
@@ -89,8 +89,8 @@ export class Souffle {
           if (ca.w < 0.5 || cb.w < 0.5) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
         }`,
       fragmentShader: /* glsl */`
-        uniform vec3 uCouleur; varying vec2 vQ; varying float vA;
-        void main() { float d = abs(vQ.y); gl_FragColor = vec4(uCouleur, vA * smoothstep(1.0, 0.1, d) * smoothstep(1.0, 0.72, abs(vQ.x))); }`,
+        uniform vec3 uCouleur, uClair; varying vec2 vQ; varying float vA;
+        void main() { float d = abs(vQ.y); gl_FragColor = vec4(uCouleur * uClair, vA * 0.32 * smoothstep(1.0, 0.1, d) * smoothstep(1.0, 0.6, abs(vQ.x))); }`,
     }));
     this.mesh.frustumCulled = false; this.mesh.renderOrder = 7; this.mesh.visible = false;
   }

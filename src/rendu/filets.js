@@ -31,7 +31,7 @@ export class Filets {
     g.setAttribute('iId', new THREE.InstancedBufferAttribute(id, 1)); g.instanceCount = LARG;
     this.u = {
       tHist: { value: this.hist.texture }, tH: { value: tH }, tPal: { value: tPal }, uAnneau: { value: uAnneau }, uBande: { value: uBande }, uTete: { value: 0 }, uFrac: { value: 0 },
-      uEcran: { value: new THREE.Vector2(1, 1) }, uLarg: { value: 1.4 }, uChaud: { value: 0 }, uNuit: { value: 0 }, uForceF: { value: 1 },
+      uEcran: { value: new THREE.Vector2(1, 1) }, uLarg: { value: 1.4 }, uChaud: { value: 0 }, uNuit: { value: 0 }, uForceF: { value: 1 }, uClair: { value: new THREE.Color(1, 1, 1) },
     };
     this.mesh = new THREE.Mesh(g, new THREE.ShaderMaterial({
       uniforms: this.u, transparent: true, depthWrite: false, side: THREE.DoubleSide, glslVersion: THREE.GLSL3,
@@ -54,18 +54,19 @@ export class Filets {
           gl_Position = ca;
           if (saut > 0.5) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); vA = 0.0; vC2 = 0.0; vC = vec3(0.0); return; }
           gl_Position.xy += n * aC * l / uEcran * 2.0 * ca.w;
-          gl_Position.z -= 0.00035 * ca.w;
+          gl_Position.z -= 0.00001 * ca.w;
           vC2 = aC;
           vA = saut > 0.5 ? 0.0 : pow(q, 0.7) * smoothstep(0.0, 0.5, length(a.xy - a.zw) * 6.0);
           vC = texture(tPal, vec2(3.5 / 7.0, pa.y / uBande)).rgb;
         }`,
       fragmentShader: /* glsl */`
-        precision highp float; uniform float uChaud, uNuit, uForceF; in float vA, vC2; in vec3 vC; out vec4 o;
+        precision highp float; uniform float uChaud, uNuit, uForceF; uniform vec3 uClair; in float vA, vC2; in vec3 vC; out vec4 o;
         void main() {
+          // Pas un trait : de la poussière qui file, éclairée comme l'air autour d'elle.
           float e = 1.0 - abs(vC2);
-          vec3 c = mix(vC, vec3(1.0, 0.76, 0.5) * 1.5, uChaud);
-          c = mix(c, vec3(0.5, 0.62, 0.86), uNuit * 0.7);
-          o = vec4(c, vA * smoothstep(0.0, 0.42, e) * 0.86 * uForceF);
+          vec3 c = mix(mix(vC * vC, vec3(1.0), 0.5) * uClair, vec3(1.0, 0.76, 0.5) * 1.5, uChaud);
+          c = mix(c, vec3(0.5, 0.62, 0.86) * 0.4, uNuit * 0.7);
+          o = vec4(c, vA * smoothstep(0.0, 0.9, e) * mix(0.2, 0.86, uChaud) * uForceF);
         }`,
     }));
     this.mesh.frustumCulled = false; this.mesh.renderOrder = 3;
@@ -74,7 +75,7 @@ export class Filets {
   // Une ligne de plus dans le tableau, toutes les deux images environ.
   maj(dt, l, h, pr) {
     this.acc += dt;
-    this.u.uEcran.value.set(l * pr, h * pr); this.u.uLarg.value = 1.15 * Math.max(1, pr);
+    this.u.uEcran.value.set(l * pr, h * pr); this.u.uLarg.value = 0.95 * Math.max(1, pr);
     if (this.acc < 1 / 30) return;
     this.acc = 0;
     this.tete = (this.tete + 1) % LONG;

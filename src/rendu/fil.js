@@ -27,11 +27,12 @@ export class Fil {
     if (this.n >= MAX) return;
     const px = this.dx, ps = this.ds, l = Math.hypot(x - px, s - ps) || 1;
     const nx = this.n ? -(s - ps) / l : 1, ns = this.n ? (x - px) / l : 0, e = 0.13;
-    const y = Math.max(0, this.monde.h(x, s)) + 0.12, i = this.n * 2 * 3, a = this.pos.array;
+    const y = Math.max(0, this.monde.h(x, s)) + 0.5, i = this.n * 2 * 3, a = this.pos.array;
     a[i] = x + nx * e; a[i + 1] = y; a[i + 2] = -(s + ns * e);
     a[i + 3] = x - nx * e; a[i + 4] = y; a[i + 5] = -(s - ns * e);
     this.pos.needsUpdate = true;
-    this.pos.clearUpdateRanges(); this.pos.addUpdateRange(i, 6);
+    // Sans jamais vider la liste : à ×16, plusieurs points s'ajoutent par image, et chacun doit partir vers le GPU.
+    this.pos.addUpdateRange(i, 6);
     this.n++; this.dx = x; this.ds = s; this.points.push(x, s);
     this.mesh.geometry.setDrawRange(0, Math.max(0, (this.n - 1) * 6));
   }

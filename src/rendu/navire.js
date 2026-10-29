@@ -2,13 +2,14 @@
 // comme des falaises. Quand elle propose de hisser la Horde à bord, ses cordes descendent jusqu'au sol.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { GLSL_COMMUN, GLSL_OMBRE } from './communs.js';
 
 const nu = (g) => { const q = g.index ? g.toNonIndexed() : g, a = new THREE.BufferGeometry(); a.setAttribute('position', q.getAttribute('position')); a.setAttribute('normal', q.getAttribute('normal')); return a; };
 
 export class Navire {
-  constructor() {
+  constructor(commun) {
     this.groupe = new THREE.Group(); this.groupe.visible = false;
-    this.u = { uTemps: { value: 0 }, uCorde: { value: 0 } };
+    this.u = { ...commun, uCorde: { value: 0 } };
     const LON = 230;
     this.echelle = 0.72;
 
@@ -35,19 +36,20 @@ export class Navire {
     pieces.push(nu(new THREE.BoxGeometry(26, 15, 40).translate(0, 20, -86)), nu(new THREE.BoxGeometry(20, 9, 24).translate(0, 32, -90)), nu(new THREE.BoxGeometry(22, 8, 22).translate(0, 17, 74)));
     for (let i = 0; i < 26; i++) pieces.push(nu(new THREE.CylinderGeometry(0.34, 0.34, 3, 6).translate(i % 2 ? 16.5 : -16.5, 15, -66 + Math.floor(i / 2) * 11)));
     const mCoque = new THREE.ShaderMaterial({
-      vertexShader: 'varying vec3 vN, vP; void main() { vN = normalize(mat3(modelMatrix) * normal); vP = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+      uniforms: this.u,
+      vertexShader: 'varying vec3 vN, vP, vM; void main() { vN = normalize(mat3(modelMatrix) * normal); vP = position; vM = (modelMatrix * vec4(position, 1.0)).xyz; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
       fragmentShader: /* glsl */`
-        varying vec3 vN, vP;
+        precision highp float; varying vec3 vN, vP, vM;
+        ${GLSL_COMMUN}
+        ${GLSL_OMBRE}
         void main() {
           vec3 n = normalize(vN);
-          float l = clamp(dot(n, normalize(vec3(-0.62, 0.47, -0.5))), 0.0, 1.0), haut = 0.5 + 0.5 * n.y;
           float b = fract(vP.y * 0.62 + sin(vP.z * 0.02) * 0.5), bord = smoothstep(0.0, 0.06, b) * smoothstep(1.0, 0.94, b);
           float jt = step(0.965, fract(vP.z * 0.07 + floor(vP.y * 0.62) * 0.37));
           vec3 bois = mix(vec3(0.27, 0.19, 0.15), vec3(0.47, 0.34, 0.25), 0.5 + 0.5 * sin(vP.y * 0.62 * 6.283 * 0.5 + 1.0) * cos(vP.z * 0.031));
           bois *= (0.74 + 0.26 * bord) * (1.0 - jt * 0.3);
           bois = mix(bois, vec3(0.2, 0.3, 0.28), smoothstep(-1.0, -5.0, vP.y));          // le cuivre sous la flottaison
-          vec3 c = bois * (mix(vec3(0.52, 0.56, 0.64), vec3(0.84), haut) + vec3(0.82, 0.76, 0.64) * l);
-          gl_FragColor = vec4(c, 1.0);
+          gl_FragColor = vec4(eclairer(bois * bois, n, vM, 0.55, soleilVu(vM, gl_FragCoord.xy), 0.8), 1.0);
         }`,
     });
     const h = new THREE.Mesh(mergeGeometries(pieces), mCoque);
@@ -66,7 +68,7 @@ export class Navire {
     const mVoile = new THREE.ShaderMaterial({
       uniforms: this.u, side: THREE.DoubleSide,
       vertexShader: /* glsl */`
-        uniform float uTemps; varying vec2 vUv; varying vec3 vN; varying vec3 vP;
+        uniform float uTemps; varying vec2 vUv; varying vec3 vN; varying vec3 vP, vM;
         void main() {
           vUv = uv; vec3 p = position;
           float gon = sin(uv.x * 3.1416) * (0.42 + 0.58 * sin(uv.y * 3.1416));
@@ -74,22 +76,26 @@ export class Navire {
           float pan = sin(uv.y * 31.416) * 0.5 * gon;                     // la toile se creuse entre deux lattes
           p.z -= gon * souffle + pan;
           vec3 d = vec3(cos(uv.x * 3.1416) * 0.72, cos(uv.y * 3.1416) * 0.34 + cos(uv.y * 31.416) * 0.2, 1.0);
-          vN = normalize(mat3(modelMatrix) * d); vP = p;
+          vN = normalize(mat3(modelMatrix) * d); vP = p; vM = (modelMatrix * vec4(p, 1.0)).xyz;
           gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
         }`,
       fragmentShader: /* glsl */`
-        varying vec2 vUv; varying vec3 vN, vP;
+        precision highp float; varying vec2 vUv; varying vec3 vN, vP, vM;
+        ${GLSL_COMMUN}
+        ${GLSL_OMBRE}
         void main() {
-          vec3 n = normalize(vN), s = normalize(vec3(-0.62, 0.47, -0.5));
-          float l = dot(n, s), lumiere = abs(l) * 0.72 + (l < 0.0 ? 0.26 : 0.0);          // la toile laisse passer le jour
+          vec3 n = normalize(vN);
+          if (!gl_FrontFacing) n = -n;
           vec3 toile = mix(vec3(0.86, 0.78, 0.64), vec3(0.72, 0.6, 0.46), smoothstep(0.3, 1.0, vUv.y) * 0.5);
           float couture = smoothstep(0.03, 0.0, abs(fract(vUv.x * 13.0) - 0.5));
           float latte = smoothstep(0.016, 0.0, abs(fract(vUv.y * 5.0) - 0.5));
-          vec3 c = toile * (0.56 + 0.62 * lumiere);
+          vec3 c = toile * toile;
           c *= 1.0 - couture * 0.1;
-          c = mix(c, vec3(0.3, 0.22, 0.16), latte * 0.85);
+          c = mix(c, vec3(0.09, 0.05, 0.026), latte * 0.85);
           c *= 0.92 + 0.08 * sin(vUv.y * 90.0);
-          gl_FragColor = vec4(c, 1.0);
+          vec3 fin = eclairer(c, n, vM, 0.9, soleilVu(vM, gl_FragCoord.xy), 0.9);
+          fin += c * uSoleilCol * max(dot(-n, uSoleil), 0.0) * 0.46 * (1.0 - tempeteA(-vM.z));      // la toile laisse passer le jour
+          gl_FragColor = vec4(fin, 1.0);
         }`,
     });
     const voiles = [];
@@ -141,11 +147,12 @@ export class Navire {
           gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
         }`,
       fragmentShader: /* glsl */`
-        varying float vT; varying vec3 vN;
+        precision highp float; varying float vT; varying vec3 vN;
+        ${GLSL_COMMUN}
         void main() {
           float tresse = 0.8 + 0.2 * sin(vT * 7.0 + atan(vN.z, vN.x) * 2.0), noeud = step(0.92, fract(vT / 6.0));
-          float l = 0.62 + 0.38 * clamp(dot(normalize(vN), normalize(vec3(-0.62, 0.3, -0.5))), 0.0, 1.0);
-          gl_FragColor = vec4(vec3(0.5, 0.4, 0.28) * tresse * l * (1.0 + noeud * 0.3), 1.0);
+          vec3 n = normalize(vN), c = vec3(0.25, 0.16, 0.08) * tresse * (1.0 + noeud * 0.3);
+          gl_FragColor = vec4(c * (uSoleilCol * max(dot(n, uSoleil), 0.0) + cielDiffus(n)), 1.0);
         }`,
     }));
     this.cordes.frustumCulled = false; this.groupe.add(this.cordes);
@@ -155,7 +162,6 @@ export class Navire {
   // longueur en unités du monde, de la coque au sol.
   corde(l) { this.u.uCorde.value = l / this.echelle; }
   poser(x, y, s, cap, temps) {
-    this.u.uTemps.value = temps;
     this.groupe.position.set(x, y, -s);
     this.groupe.rotation.set(0.012 * Math.sin(temps * 0.4), cap, 0.012 * Math.sin(temps * 0.31));
   }
