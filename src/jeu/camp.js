@@ -7,12 +7,15 @@ export class Camp {
     this.j = j; this.onPremier = onPremier;
     this.immobile = 0; this.parole = 0;
   }
+  // La règle, en un seul endroit : on campe là où le vent ne porte pas.
+  abrite() { const h = this.j.horde; return h.abri > 0.4 || h.force < 0.5; }
   maj(dt, marche, ev) {
     const { j } = this, { horde, hud } = j;
-    const abrite = horde.abri > 0.4 || horde.force < 0.5;
+    const abrite = this.abrite();
     this.immobile = marche || !abrite ? 0 : this.immobile + dt;
-    // On ne campe que fatigué : une Horde fraîche attend sans que la nuit tombe.
-    const camper = this.immobile > 2.4 && !ev.actifs() && (j.camp || horde.souffle < 0.8);
+    if (marche || !abrite) this.demande = false;
+    // On ne campe que fatigué, ou si on le demande : une Horde fraîche attend sans que la nuit tombe.
+    const camper = (this.immobile > 2.4 || this.demande) && !ev.actifs() && (j.camp || horde.souffle < 0.8 || this.demande);
     if (camper && !j.camp) {
       j.camp = true; this.parole = 3.5;
       // Le repas : il faut en avoir un pour vraiment récupérer.

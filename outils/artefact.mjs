@@ -1,4 +1,4 @@
-// Construit une page unique pour un artefact : tout en ligne, sauf three.js et Spectral, servis par des CDN.
+// Construit une page unique pour un artefact : tout en ligne, matières comprises, sauf three.js et Spectral, servis par des CDN.
 // node outils/artefact.mjs  →  dist-artefact/contrevent.html
 import { build } from 'vite';
 import fs from 'node:fs';
@@ -14,7 +14,7 @@ await build({
   worker: { format: 'iife' },
   resolve: { alias: [{ find: /^@fontsource\/.*$/, replacement: path.join(racine, 'outils/vide.css') }] },
   build: {
-    outDir: sortie, emptyOutDir: true, target: 'es2022', cssCodeSplit: false, modulePreload: false,
+    outDir: sortie, emptyOutDir: true, target: 'es2022', cssCodeSplit: false, modulePreload: false, assetsInlineLimit: 1e9,
     rollupOptions: { external: [/^three(\/.*)?$/] },
   },
 });

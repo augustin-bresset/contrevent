@@ -9,7 +9,7 @@ const nx = W / pas, nt = T / pas;
 let echecs = 0;
 for (let g = 0; g < n; g++) {
   const graine = g === 0 ? 34 : g === 1 ? 2026 : g * 7919;
-  const F = creerFabrique(graine), route = F.esquisse.route;
+  const F = creerFabrique(graine), route = F.esquisse.route, pleins = F.esquisse.emprises;
   const H = (k) => F.relief(k);
   const h = (x, s) => {
     const fx = Math.max(0, Math.min(nx - 1.001, x / pas - 0.5)), fs = s / pas - 0.5, i = fx | 0, j = Math.floor(fs), a = fx - i, b = fs - j;
@@ -30,6 +30,7 @@ for (let g = 0; g < n; g++) {
       if (vu[q]) continue;
       // Pente tâtée au pas de la Horde, dans le sens de la marche.
       if (h((i + di * PAS / c) * c, (j + dj * PAS / c) * c) - h0 > MAXI) continue;
+      if (pleins.some((e) => Math.abs(e.s - v * c) < e.r + 3 && Math.hypot(u * c - e.x, v * c - e.s) < e.r + 3)) continue;
       vu[q] = 1; f[b++] = q;
     }
   }

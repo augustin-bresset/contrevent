@@ -52,6 +52,8 @@ export class Horde {
     const { monde, vent } = this, w = vent.ici(this.x, this.s, this.w);
     const f = Math.hypot(w.x, w.s);
     this.force = f; this.abri = w.abri;
+    // Une scène : personne ne bouge, personne ne s'use.
+    if (this.repos) { this.vitesse = 0; this.corps(dt, f, 1); return { effort: 0 }; }
 
     this.serre += ((cmd.serre ? 1 : 0) - this.serre) * (1 - Math.exp(-dt * 7));
     // Le bloc abrite, le nombre aussi : chaque perdu laisse plus de vent aux autres.
@@ -94,7 +96,7 @@ export class Horde {
     const v = Math.hypot(vx, vs);
     if (v > 1e-3) {
       const h = Math.max(0, monde.h(this.x, this.s)), ux = vx / v, us = vs / v, PAS = 1.6;
-      const libre = (a, b) => Math.max(0, monde.h(this.x + a * PAS, this.s + b * PAS)) - h <= 1.7 * PAS;
+      const libre = (a, b) => Math.max(0, monde.h(this.x + a * PAS, this.s + b * PAS)) - h <= 1.7 * PAS && !monde.plein(this.x + a * PAS * 3, this.s + b * PAS * 3);
       if (!libre(ux, us)) {
         let trouve = false;
         for (const q of [0.6, 1.1, 1.6, 2.1]) {
@@ -147,7 +149,7 @@ export class Horde {
       const pris = f * f * m.expo * expoP;
       // En bloc, on tient presque toujours : c'est ce qui rend le bloc vital, et il tient de moins en moins vers l'amont.
       const lache = mix(0.5, mix(R.emporteBloc, R.emporteBlocFin, (this.s / monde.L) ** 2), this.serre);
-      if (!m.emporte && pris > R.seuilEmporte && m.id !== 'golgoth' && Math.random() < dt * lache) m.emporte = true;
+      if (!this.repos && !m.emporte && pris > R.seuilEmporte && m.id !== 'golgoth' && Math.random() < dt * lache) m.emporte = true;
       if (m.emporte) {
         m.x += dirW[0] * f * 11 * dt; m.s += dirW[1] * f * 11 * dt;
         const d = Math.hypot(m.x - this.x, m.s - this.s);
@@ -158,6 +160,7 @@ export class Horde {
         const v = Math.min(d * 2.6, 15);
         if (d > 1e-3) { m.x += dx / d * v * dt; m.s += ds / d * v * dt; }
       }
+      monde.ecarter(m);
       // Le pas suit la distance parcourue : pas de pieds qui glissent, pas de piétinement sur place.
       const dpl = Math.hypot(m.x - x0, m.s - s0), vit = dpl / Math.max(dt, 1e-4);
       m.marche += dpl * 3.8;

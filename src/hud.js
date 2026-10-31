@@ -83,6 +83,14 @@ export class Hud {
 
   bloc(v) { document.body.classList.toggle('en-bloc', v); }
 
+  // Peut-on se reposer ici ? Toujours dit au même endroit.
+  repos(texte, classe) {
+    if (texte === this.reposAff) return;
+    this.reposAff = texte;
+    const e = document.getElementById('repos');
+    e.textContent = texte; e.className = classe; e.hidden = !texte;
+  }
+
   teinte(c) {
     const r = document.documentElement.style;
     r.setProperty('--encre', `color-mix(in srgb, ${c.encre} 62%, #0b1420)`); r.setProperty('--ciel', c.ciel);

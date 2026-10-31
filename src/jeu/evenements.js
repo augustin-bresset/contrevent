@@ -280,7 +280,7 @@ export class Evenements {
   apparaitre(n, opts = {}) {
     const { j } = this, h = j.horde;
     for (let i = 0; i < n; i++) {
-      const a = Math.PI + (this.r() - 0.5) * 2.4, d = 130 + this.r() * 50;
+      const a = Math.PI + (this.r() - 0.5) * 2.4, d = 190 + this.r() * 60;
       const x = Math.max(16, Math.min(j.monde.W - 16, h.x + Math.sin(a) * d)), s = h.s + Math.cos(a) * d;
       this.ennemis.push({ x, s, y: 0, pv: opts.pv || 1, v: opts.v || R.vitesseAssaut + this.r() * 5, phase: this.r() * 6.28, presence: 1, recul: 0, nom: opts.nom });
     }
