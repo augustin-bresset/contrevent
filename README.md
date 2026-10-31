@@ -21,10 +21,12 @@ L'adresse accepte `?graine=34` pour rejouer un monde, et `?debug` pour exposer `
 | Maintenir le clic | Golgoth marche vers le point visé, et le chemin prévu est oublié. ZQSD, WASD et les flèches marchent aussi |
 | Retour, Suppr | Efface le dernier point, ou tout le chemin |
 | Espace, ou clic droit | Fait bloc ou desserre : une bascule, pas une touche à tenir. La Horde est plus lente, mais elle tient dans le vent |
-| T, ou « temps normal » en haut à droite | Accélère le temps : ×2, ×4, ×8. Le moindre danger le ramène à la normale |
-| V | Regarder à hauteur de Horde, ou revenir au-dessus. La caméra y descend seule en arrivant dans un lieu ; un clic ne l'interrompt pas, V oui |
+| T, ou « temps normal » en haut à droite | Accélère le temps : ×2, ×4, ×8, ×16. Le moindre danger le ramène à la normale |
+| C, tenu | Lit le pays : le relief se dessine en courbes de niveau, et le vent ressort |
+| Molette | Rapproche la caméra du sol, ou l'élève pour lire le chemin |
+| V | Regarder à hauteur de Horde, ou revenir au-dessus. En arrivant dans un lieu, la caméra y descend seule : le jeu s'arrête, le chemin est oublié, personne ne se fatigue et rien n'attaque. V reprend la marche |
 | Cliquer sur un assaillant | Erg frappe. Le Corroyeur est invisible : il faut cliquer là où les lignes se tordent |
-| S'arrêter à l'abri, fatigué | La Horde campe seule : la nuit tombe, le souffle revient, la partie s'enregistre |
+| R, ou le message en bas de l'écran | Camper, si l'endroit est à l'abri. Les zones dorées au sol sont celles où le vent ne porte pas : elles s'affichent quand le souffle baisse, ou en tenant C. S'y arrêter fatigué suffit aussi : la nuit tombe, le souffle revient, la partie s'enregistre |
 | M, Échap, ou le numéro de page | La bande du monde, le fil rouge, le son |
 
 Espace est une bascule parce que Linux coupe souvent le pavé tactile tant qu'une touche est enfoncée :
@@ -51,16 +53,28 @@ par une fonction de courant, `div(r grad ψ) = 0`, où `r` est la résistance du
 s'accélère dans les défilés (la porte d'Urle, ou le long détour par la glace) et laisse du calme sous le vent.
 Les lignes à l'écran sont ces mêmes données : elles sont l'information de jeu. Lire le vent, c'est jouer.
 
-**Deux états, rien entre les deux.** De jour, un dessin de carte : lavis à deux tons, courbes de niveau à l'encre.
-Dans le furvent, un front noir descend la carte et inverse tout : la Horde devient braise, les lignes brûlent.
+**Un pays, pas une carte.** La caméra voit l'horizon : la Horde marche en bas de l'image, et le monde se perd dans l'air.
+Le dessin de carte d'origine n'a pas disparu : tenir C fait revenir les courbes de niveau, et le vent ressort.
+Dans le furvent, un mur de sable de plusieurs centaines d'unités descend la bande et prend le jour.
 
 **Le fil rouge.** Golgoth est le traceur : la Horde laisse un fil qui ne s'efface pas. La fin le montre, sur toute la bande.
 
-**Rien n'est agrandi.** Les filets du vent sont de vrais rubans dessinés à la résolution de l'écran, le titre est un tracé net
-rongé par un shader, et la qualité automatique renonce à de l'herbe plutôt qu'à des pixels : elle ne descend jamais sous l'écran.
+**La lumière est une seule lumière.** Une atmosphère calculée (diffusion de Rayleigh et de Mie, d'après Hillaire) donne à la fois
+le ciel, la couleur du soleil au sol, l'éclairage ambiant et la brume : le sol, les pierres, les corps et les monuments vivent sous
+le même ciel. Chaque contrée a son air : plus de poussière dans le désert, un ciel couvert à Norska, des cendres à Krafla.
+Le soleil éclaire de trois quarts, derrière la Horde : à contre-jour, tout ce qu'on voit lui tournerait le dos.
 
-**La lumière.** L'ombre du relief et ses creux sont précalculés avec le monde, les monuments et les rochers portent une ombre
-en temps réel, la brume s'allume du côté du soleil. Un seul matériau sait être pierre appareillée, mur percé, tuile, cuivre, glace ou lave.
+**Une vraie matière.** Le sol mêle des scans réels selon la pente, l'altitude et la contrée, lus à deux échelles pour effacer la
+répétition. Les rochers sont des scans réduits à environ 1 300 triangles, qui gardent le relief de l'original grâce à des normales cuites.
+Le vent dépose sur eux ce qu'il transporte. Dunes à face d'avalanche, mesas en gradins et crêtes érodées sont dans le relief lui-même.
+
+**Un bâti de masses.** Les villes sont faites de peu de pièces, sculptées en fonctions de distance (`outils/bati.mjs`) : des volumes
+purs, fondus entre eux, avec l'ombre des creux et l'usure des arêtes cuites dedans. La forme et la lumière font le travail, pas le détail.
+Les murs comptent pour le jeu : ils ne se traversent pas, arrêtent le vent, et on dort à l'abri derrière eux (`monde/villes.js`).
+
+**L'image.** Rendu en lumière réelle, occlusion ambiante, poussière éclairée pas à pas dans l'air, nuages volumétriques qui portent
+leur ombre au sol, lissage temporel, développement AgX. La qualité se compte en pixels : le lissage rattrape mieux une image un peu
+moins grande qu'une image privée de ses ombres. On ne renonce aux effets qu'en dernier.
 
 **Une contrée, une couleur.** Glace d'Aberlaas, vert de Port-Choon, jade de la Flaque, sable de Leergeem,
 rose d'Alticcio, malachite, mauve d'Égine, ocre du Scóverr, bleu de Norska, cendre de Krafla, blanc de l'Extrême-Amont.
@@ -83,7 +97,7 @@ Une seule famille, Spectral (Production Type, licence OFL). Le son est entièrem
 
 ```
 src/monde/       graine → esquisse, puis relief, vent et lumière par tranches, dans un worker
-src/rendu/       sol, ciel, ombres, filets, herbe, souffle, semis, figures, monuments, Physalis, mur du furvent, foudre, post-traitement
+src/rendu/       atmosphère, sol, matières, ombres, filets, herbe, souffle, semis, figures, monuments, Physalis, mur du furvent, foudre, chaîne d'image
 src/jeu/         la Horde, le vent instantané, les événements, les textes
 src/hud.js       interface  ·  src/carte.js  la bande  ·  src/audio.js  le son  ·  src/main.js  la boucle
 ```
@@ -104,6 +118,19 @@ Toute modification doit toucher les deux.
 
 La route est tirée par graine et garantit un passage. Les contrées, les lieux et les événements gardent l'ordre
 du roman ; leurs positions, le relief, les abris et les chrones errants changent.
+
+## Matières
+
+Les textures et les rochers viennent de [Poly Haven](https://polyhaven.com), sous licence CC0. Rien de tout cela n'est versionné
+sous sa forme brute : `src/rendu/matieres/` contient le résultat, déjà aplani et empaqueté (3 Mo de WebP).
+Pour le refaire, à partir d'un dossier de scans téléchargés :
+
+```
+python3 outils/matieres.py <textures>       aplanit les scans, raccorde leurs bords, empaquette couleur, pentes et hauteur
+node outils/rochers.mjs <modèles>           réduit les rochers  →  src/rendu/rochers-maillage.js
+python3 outils/cuire.py <modèles>           cuit les normales du scan complet dans le repère de l'objet
+node outils/bati.mjs [pièces…]              sculpte le bâti  →  src/rendu/bati-maillage.js
+```
 
 ## Sources du monde
 
