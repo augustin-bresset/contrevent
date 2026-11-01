@@ -2,6 +2,7 @@
 // Les têtes sont les particules de la simulation ; un tableau circulaire garde leurs dernières positions,
 // et le vertex shader relit ce tableau pour dérouler le ruban. Rien n'est plus jamais agrandi.
 import * as THREE from 'three';
+import { GLSL_ONDE } from './communs.js';
 
 const LARG = 1800, LONG = 40;
 
@@ -31,14 +32,15 @@ export class Filets {
     g.setAttribute('iId', new THREE.InstancedBufferAttribute(id, 1)); g.instanceCount = LARG;
     this.u = {
       tHist: { value: this.hist.texture }, tH: { value: tH }, tPal: { value: tPal }, uAnneau: { value: uAnneau }, uBande: { value: uBande }, uTete: { value: 0 }, uFrac: { value: 0 },
-      uEcran: { value: new THREE.Vector2(1, 1) }, uLarg: { value: 1.4 }, uChaud: { value: 0 }, uNuit: { value: 0 }, uForceF: { value: 1 }, uClair: { value: new THREE.Color(1, 1, 1) },
+      uEcran: { value: new THREE.Vector2(1, 1) }, uLarg: { value: 1.4 }, uChaud: { value: 0 }, uNuit: { value: 0 }, uForceF: { value: 1 }, uFrontF: { value: new THREE.Vector2(1e6, 0) }, uClair: { value: new THREE.Color(1, 1, 1) },
     };
     this.mesh = new THREE.Mesh(g, new THREE.ShaderMaterial({
       uniforms: this.u, transparent: true, depthWrite: false, side: THREE.DoubleSide, glslVersion: THREE.GLSL3,
       vertexShader: /* glsl */`
         precision highp float; precision highp int;
-        uniform sampler2D tHist, tH, tPal; uniform vec2 uAnneau, uEcran; uniform int uTete; uniform float uLarg, uFrac, uBande;
+        uniform sampler2D tHist, tH, tPal; uniform vec2 uAnneau, uEcran; uniform int uTete; uniform float uLarg, uFrac, uBande, uChaud; uniform vec2 uFrontF;
         in float aT, aC, iId; out float vA; out vec3 vC; out float vC2;
+        ${GLSL_ONDE}
         vec4 lit(int i) { return texelFetch(tHist, ivec2(int(iId), (uTete - i + ${LONG * 4}) % ${LONG}), 0); }
         vec3 monte(vec2 p) { return vec3(p.x, max(texture(tH, p / uAnneau).r, 0.0) + 0.3, -p.y); }
         void main() {
@@ -57,6 +59,9 @@ export class Filets {
           gl_Position.z -= 0.00001 * ca.w;
           vC2 = aC;
           vA = saut > 0.5 ? 0.0 : pow(q, 0.7) * smoothstep(0.0, 0.5, length(a.xy - a.zw) * 6.0);
+          // Vu de dehors, rien ne file derrière le mur ; dedans, les filets se perdent dans la poussière.
+          vA *= 1.0 - uFrontF.y * smoothstep(-30.0, 70.0, pa.y - uFrontF.x - ondeFront(pa.x));
+          vA *= mix(1.0, smoothstep(2100.0, 520.0, ca.w), uChaud);
           vC = texture(tPal, vec2(3.5 / 7.0, pa.y / uBande)).rgb;
         }`,
       fragmentShader: /* glsl */`

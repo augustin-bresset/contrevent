@@ -52,7 +52,7 @@ function versAbri(rayon) {
 }
 
 function joueur() {
-  const m = vent.masque(horde.s) * vent.front.presence;
+  const m = vent.masque(horde.s, horde.x) * vent.front.presence;
   cmd.serre = m > 0.25 || horde.force > 1.3 || (!!ev.tempete && horde.abri < 0.42);
   cmd.actif = false; cmd.vitesseMax = j.pesanteur;
   if (horde.souffle > 0.92 || (j.vivres === 0 && !j.repas && horde.souffle >= R.plafondSansRepas - 0.01)) repos = false;

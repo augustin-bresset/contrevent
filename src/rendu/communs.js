@@ -1,8 +1,16 @@
 // Morceaux de GLSL partagés. Tout travaille en lumière réelle (valeurs linéaires, au-delà de 1) : le film se fait à la fin.
 export const NB_REMOUS = 8;
 
+// Le front du furvent n'est pas une droite : il avance par lobes. Même formule que `ondeFront` dans jeu/vent.js.
+export const GLSL_ONDE = /* glsl */`
+#ifndef ONDE_FRONT
+#define ONDE_FRONT
+float ondeFront(float x) { return 96.0 * sin(x * 0.0017 + 1.3) + 54.0 * sin(x * 0.0043 + 4.1) + 23.0 * sin(x * 0.0097 + 2.2); }
+#endif`;
+
 // Le vent de jeu, identique à `ventInstant` dans jeu/vent.js.
 export const GLSL_VENT = /* glsl */`
+${GLSL_ONDE}
 uniform sampler2D tVent;
 uniform vec2 uAnneau;
 uniform vec4 uRemous[${NB_REMOUS}];     // x, s, rayon, force (signe = sens)
@@ -10,12 +18,13 @@ uniform vec3 uFront;                    // front (s), queue (s), multiplicateur
 uniform vec4 uNavire;                   // x, s, rayon, présence
 uniform float uRespir;                  // rafales globales
 
-float masqueTempete(float s) {
-  return smoothstep(uFront.x - 34.0, uFront.x + 34.0, s) * (1.0 - smoothstep(uFront.y - 90.0, uFront.y + 90.0, s));
+float masqueTempete(vec2 p) {
+  float o = ondeFront(p.x), s = p.y;
+  return smoothstep(uFront.x + o - 34.0, uFront.x + o + 34.0, s) * (1.0 - smoothstep(uFront.y + o - 90.0, uFront.y + o + 90.0, s));
 }
 vec2 ventIci(vec2 p) {
   vec2 w = texture2D(tVent, p / uAnneau).xy * uRespir;
-  float m = masqueTempete(p.y);
+  float m = masqueTempete(p);
   w *= 1.0 + (uFront.z - 1.0) * m;
   if (uNavire.w > 0.0) {
     vec2 d = (p - uNavire.xy) / vec2(uNavire.z * 0.8, uNavire.z * 1.5);
@@ -38,6 +47,7 @@ void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }`;
 
 // Ce que partage tout ce qui reçoit de la lumière : le ciel, le soleil, la nuit, le furvent.
 export const GLSL_COMMUN = /* glsl */`
+${GLSL_ONDE}
 uniform sampler2D tPal, tBruit, tCiel, tL;
 uniform vec2 uAnneau;                     // le terrain chargé : il tourne sur lui-même, s modulo la longueur de l'anneau
 uniform vec3 uFrontT, uSoleil, uSoleilCol, uFeu;
@@ -49,8 +59,9 @@ float fbm3(vec2 p) {
   vec4 a = texture2D(tBruit, p / 256.0), b = texture2D(tBruit, (p * 2.1 + 3.1) / 256.0);
   return 0.55 * a.r + 0.3 * b.g + 0.15 * texture2D(tBruit, (p * 4.3 + 7.7) / 256.0).b;
 }
-float tempeteA(float s) {
-  return smoothstep(uFrontT.x - 34.0, uFrontT.x + 34.0, s) * (1.0 - smoothstep(uFrontT.y - 90.0, uFrontT.y + 90.0, s)) * uFrontT.z;
+float tempeteA(float x, float s) {
+  float o = ondeFront(x);
+  return smoothstep(uFrontT.x + o - 50.0, uFrontT.x + o + 90.0, s) * (1.0 - smoothstep(uFrontT.y + o - 90.0, uFrontT.y + o + 90.0, s)) * uFrontT.z;
 }
 const vec3 BLANC_FIN = vec3(1.9, 1.88, 1.85);
 const float PI = 3.14159265;
@@ -77,7 +88,7 @@ float soleilRelief(vec3 P, float haut) { return mix(texture2D(tL, vec2(P.x, -P.z
 // Une surface mate ordinaire : pour tout ce qui n'a pas de raison d'être plus compliqué.
 vec3 eclairer(vec3 alb, vec3 n, vec3 P, float rug, float vis, float occl) {
   vec3 v = normalize(cameraPosition - P);
-  float t = tempeteA(-P.z), nl = max(dot(n, uSoleil), 0.0);
+  float t = tempeteA(P.x, -P.z), nl = max(dot(n, uSoleil), 0.0);
   vec3 sun = uSoleilCol * vis * (1.0 - 0.94 * t);
   vec3 amb = cielDiffus(n) * occl * (1.0 - 0.7 * t);
   // Le sol clair renvoie le soleil par en dessous : c'est lui qui éclaire les faces à l'ombre.
@@ -97,7 +108,7 @@ export const GLSL_GLACE = /* glsl */`
 vec3 glace(vec3 P, vec3 n, float ao, float ar, float vis) {
   if (dot(n, cameraPosition - P) < 0.0) n = -n;
   vec3 V = normalize(cameraPosition - P);
-  float t = tempeteA(-P.z), fr = pow(1.0 - max(dot(n, V), 0.0), 4.0);
+  float t = tempeteA(P.x, -P.z), fr = pow(1.0 - max(dot(n, V), 0.0), 4.0);
   vec3 amb = cielDiffus(n) * (1.0 - 0.7 * t), sun = uSoleilCol * vis * (1.0 - 0.94 * t);
   // On voit à travers : le ciel, teinté par l'épaisseur.
   vec3 r = refract(-V, n, 0.76);

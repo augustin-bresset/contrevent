@@ -83,7 +83,7 @@ export class Evenements {
       if (l.id === 'krafla') this.krafla(l);
     }
     const c = monde.contreeA(horde.s);
-    if (c.id !== this.contree) { this.contree = c.id; j.audio.contree(monde.contrees.indexOf(c)); j.hud.teinte(c); j.changerAir(c); }
+    if (c.id !== this.contree) { this.contree = c.id; j.audio.contree(monde.contrees.indexOf(c)); j.changerAir(c); }
 
     this.majTempete(dt);
     this.majNavire(dt);
@@ -123,10 +123,13 @@ export class Evenements {
   furvent({ m, premier }) {
     if (this.tempete) return;
     const { j } = this, oroshi = j.horde.vit('oroshi');
-    this.tempete = { phase: 'annonce', t: oroshi ? R.alerte : 2, m, longueur: 900 + m * 120, premier };
+    // Le mur est déjà là, sur l'horizon : l'alerte ne fait que donner le temps de le voir venir.
+    const fr = j.vent.front, av = oroshi ? R.alerte : 2;
+    this.tempete = { m, longueur: 900 + m * 120, premier, gronde: false };
+    fr.a = j.horde.s + R.frontDepart + (R.frontVitesse / R.frontElan) * (Math.exp(R.frontElan * av) - 1); fr.b = fr.a + this.tempete.longueur; fr.m = m; fr.presence = 0;
     if (oroshi) j.hud.dire('oroshi', premier ? 'Ça vient de l’amont. Un furvent, le premier. Trouvez un creux, et faites bloc.' : 'Furvent. Il arrive. Un creux, vite.');
     else j.hud.dire('sov', 'Oroshi n’est plus là pour l’entendre venir. Il est déjà sur nous.');
-    if (premier) j.hud.aide('Espace ou clic droit : faire bloc. La Horde ralentit, mais elle tient.', 16);
+    if (premier) j.hud.aide(j.tactile ? 'Touchez Faire bloc : la Horde ralentit, mais elle tient.' : 'Espace ou clic droit : faire bloc. La Horde ralentit, mais elle tient.', 16);
     j.audio.alerte();
     // Arval cherche l'abri le plus proche.
     if (j.horde.vit('arval')) {
@@ -141,19 +144,14 @@ export class Evenements {
   majTempete(dt) {
     const T = this.tempete, { j } = this;
     if (!T) { j.intensite = Math.max(0, j.intensite - dt * 0.4); return; }
-    const fr = j.vent.front;
-    if (T.phase === 'annonce') {
-      T.t -= dt;
-      if (T.t <= 0) {
-        T.phase = 'front'; fr.a = j.horde.s + R.frontDepart; fr.b = fr.a + T.longueur; fr.m = T.m; fr.presence = 1;
-        j.audio.tom(0.9, 70);
-      }
-      j.intensite = Math.min(0.35, j.intensite + dt * 0.04);
-      return;
-    }
-    const v = R.frontVitesse;
+    const fr = j.vent.front, h0 = j.horde;
+    fr.presence = Math.min(1, fr.presence + dt / 3.5);
+    // Au loin, il dévore l'horizon ; il prend son allure en arrivant sur nous.
+    const v = R.frontVitesse + Math.max(0, fr.a - h0.s - R.frontDepart) * R.frontElan;
     fr.a -= v * dt; fr.b -= v * dt;
-    const ici = j.vent.masque(j.horde.s);
+    if (fr.a - h0.s > R.frontDepart) { j.intensite = Math.min(0.35, j.intensite + dt * 0.04); return; }
+    if (!T.gronde) { T.gronde = true; j.audio.tom(0.9, 70); }
+    const ici = j.vent.masque(j.horde.s, j.horde.x);
     j.intensite += (Math.max(ici, 0.3) - j.intensite) * (1 - Math.exp(-dt * 1.4));
     if (ici > 0.6 && !T.vu) { T.vu = true; j.secousse(0.8); }
     // À découvert, le furvent arrache : le bloc retarde, seul un vrai abri protège.
@@ -230,6 +228,10 @@ export class Evenements {
     if (k === 'temps') this.dire('oroshi', 'Le vent bégaie, devant. Un chrone : le temps s’y étire. Contournez.');
     if (k === 'vera') this.dire('sov', 'Une forme droite dans le vent. Elle montre ce qu’on est, à qui y entre.');
     if (k === 'errant') this.dire('arval', 'Chrone. Regardez comme les lignes s’enroulent.');
+    if (k !== 'vera' && !this.chroneExplique) {
+      this.chroneExplique = true;
+      j.hud.aide('Un chrone ne se combat pas. Dans son cercle, il boit le souffle ; en son centre, il prend un hordier. Contournez-le : il est plus lent que vous.', 14);
+    }
     c.rem = { x: c.x, s: c.s, r: c.r, f: c.f };
     j.vent.remous.push(c.rem);
     this.chrones.push(c);
@@ -288,12 +290,12 @@ export class Evenements {
   silene() {
     this.dire('erg', 'Silène. Un poursuiveur. Il vient pour moi, je m’en occupe.');
     this.apparaitre(1, { pv: 4, v: 24, nom: 'silene' });
-    this.j.hud.aide('Cliquez sur l’assaillant : Erg frappe.', 12);
+    this.j.hud.aide(`${this.j.tactile ? 'Touchez' : 'Cliquez sur'} l’assaillant : Erg frappe.`, 12);
   }
   poursuite(n, chef, pv = 1) {
     this.dire('erg', chef ? `${chef}, et ses lames. Tenez-vous à côté de moi.` : 'La Poursuite. Encore. Derrière nous.');
     this.apparaitre(n, { pv });
-    this.j.hud.aide('Cliquez sur les assaillants : Erg frappe.', 6);
+    this.j.hud.aide(`${this.j.tactile ? 'Touchez' : 'Cliquez sur'} les assaillants : Erg frappe.`, 6);
   }
   majEnnemis(dt) {
     const { j } = this, h = j.horde;
@@ -336,8 +338,8 @@ export class Evenements {
     j.vent.remous.push(c.rem);
     this.corroyeur = c;
     this.dire('sov', 'Rien sur l’eau. Et pourtant, Alme a les mains qui tremblent.');
-    setTimeout(() => { if (this.corroyeur) this.dire('erg', 'Le Corroyeur. On ne le voit pas. Regardez où le vent se trompe, et cliquez-y.'); }, 3500);
-    j.hud.aide('Cherchez où les lignes se tordent, et cliquez.', 12);
+    setTimeout(() => { if (this.corroyeur) this.dire('erg', 'Le Corroyeur. On ne le voit pas, mais il tord l’air. Je frappe où tu me montres.'); }, 3500);
+    j.hud.aide(`${j.tactile ? 'Touchez' : 'Cliquez dans'} le cercle blanc : Erg frappe le Corroyeur. Il se reforme ailleurs : recommencez, cinq coups en tout. Ne le laissez pas approcher.`, 16);
   }
   majCorroyeur(dt) {
     const c = this.corroyeur, { j } = this;
@@ -359,10 +361,14 @@ export class Evenements {
   // Un clic sur le monde : renvoie vrai s'il touche quelque chose.
   clic(x, s) {
     const { j } = this, h = j.horde, erg = h.membres.find((m) => m.id === 'erg');
-    if (this.lameDans > 0) return false;
+    // Un clic sur une cible n'est jamais un ordre de marche, même quand la lame n'est pas prête.
+    // Un doigt vise moins juste qu'une souris : la cible s'élargit d'autant.
+    const portee = R.porteeClic * (j.tactile ? 1.5 : 1);
+    const c = this.corroyeur, surC = c && Math.hypot(c.x - x, c.s - s) < R.porteeCorroyeur * (j.tactile ? 1.25 : 1);
+    if (this.lameDans > 0) return !!surC || this.ennemis.some((e) => Math.hypot(e.x - x, e.s - s) < portee);
     const a = erg && erg.vivant ? erg : h.membres.find((m) => m.vivant && m.role === 'croc') || h.vivants()[0];
     if (!a) return false;
-    let best = null, d0 = R.porteeClic;
+    let best = null, d0 = portee;
     for (const e of this.ennemis) { const d = Math.hypot(e.x - x, e.s - s); if (d < d0) { d0 = d; best = e; } }
     if (best) {
       best.pv -= 1; best.recul = 0.45; this.lameDans = R.lame;
@@ -370,14 +376,14 @@ export class Evenements {
       j.vent.remous.push({ x: best.x, s: best.s, r: 16, f: 2.4, vie: 0.7 });
       return true;
     }
-    const c = this.corroyeur;
-    if (c && Math.hypot(c.x - x, c.s - s) < 17) {
+    if (surC) {
       c.pv -= 1; this.lameDans = R.lame;
       j.fx.ajouter(a.x, a.y, a.s, c.x, Math.max(0, j.monde.h(c.x, c.s)), c.s); j.audio.coup(); j.secousse(0.3); j.eclats.gerbe(c.x, Math.max(0, j.monde.h(c.x, c.s)), c.s);
       const b = this.r() * 6.28; c.x = h.x + Math.cos(b) * 95; c.s = h.s + Math.sin(b) * 95;
-      if (c.pv > 0) j.hud.dire('erg', c.pv > 1 ? 'Touché. Il s’est reformé plus loin.' : 'Encore. Il faiblit.');
+      if (c.pv > 0) j.hud.dire('erg', c.pv > 1 ? `Touché. Il s’est reformé plus loin. Encore ${c.pv}.` : 'Encore un. Il faiblit.');
       return true;
     }
+    if (this.chrones.some((q) => q.k !== 'vera' && Math.hypot(q.x - x, q.s - s) < q.r * 0.72)) j.hud.aide('Un chrone ne se frappe pas : contournez-le.', 5);
     return false;
   }
 }

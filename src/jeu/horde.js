@@ -50,6 +50,7 @@ export class Horde {
 
   maj(dt, cmd, ralenti = 1) {
     const { monde, vent } = this, w = vent.ici(this.x, this.s, this.w);
+    monde.majSolides(this.x, this.s);
     const f = Math.hypot(w.x, w.s);
     this.force = f; this.abri = w.abri;
     // Une scène : personne ne bouge, personne ne s'use.
@@ -96,7 +97,7 @@ export class Horde {
     const v = Math.hypot(vx, vs);
     if (v > 1e-3) {
       const h = Math.max(0, monde.h(this.x, this.s)), ux = vx / v, us = vs / v, PAS = 1.6;
-      const libre = (a, b) => Math.max(0, monde.h(this.x + a * PAS, this.s + b * PAS)) - h <= 1.7 * PAS && !monde.plein(this.x + a * PAS * 3, this.s + b * PAS * 3);
+      const libre = (a, b) => Math.max(0, monde.h(this.x + a * PAS, this.s + b * PAS)) - h <= 1.7 * PAS && !monde.bloque(this.x + a * PAS * 3, this.s + b * PAS * 3);
       if (!libre(ux, us)) {
         let trouve = false;
         for (const q of [0.6, 1.1, 1.6, 2.1]) {

@@ -5,6 +5,8 @@ import { R } from './reglages.js';
 
 const lisse = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 
+export const ondeFront = (x) => 96 * Math.sin(x * 0.0017 + 1.3) + 54 * Math.sin(x * 0.0043 + 4.1) + 23 * Math.sin(x * 0.0097 + 2.2);
+
 export class Vent {
   constructor(monde) {
     this.monde = monde;
@@ -27,14 +29,14 @@ export class Vent {
     for (const r of this.remous) if (r.vie !== undefined) r.vie -= dt;
     this.remous = this.remous.filter((r) => r.vie === undefined || r.vie > 0);
   }
-  masque(s) {
-    const { a, b } = this.front;
-    return lisse(a - 34, a + 34, s) * (1 - lisse(b - 90, b + 90, s));
+  masque(s, x) {
+    const o = ondeFront(x), { a, b } = this.front;
+    return lisse(a + o - 34, a + o + 34, s) * (1 - lisse(b + o - 90, b + o + 90, s));
   }
   ici(x, s, o) {
     this.monde.v(x, s, o);
     o.x *= this.respir; o.s *= this.respir;
-    const m = 1 + (this.front.m - 1) * this.masque(s);
+    const m = 1 + (this.front.m - 1) * this.masque(s, x);
     o.x *= m; o.s *= m;
     const n = this.navire;
     if (n.p > 0) {

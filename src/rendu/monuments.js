@@ -37,7 +37,7 @@ void main() {
   vec3 n = normalize(vN), P = vP, emis = vec3(0.0);
   float ao = vI.x, ar = vI.y, creux = vI.z, accent = vI.w, m = floor(vM + 0.5), rug = 0.86, dv = clamp(-P.z / uBande, 0.0, 1.0);
   float vis = soleilVu(P, gl_FragCoord.xy) * soleilRelief(P, vH);
-  float noir = max(uNuit, tempeteA(-P.z));
+  float noir = max(uNuit, tempeteA(P.x, -P.z));
   if (m > 2.5 && m < 3.5) { gl_FragColor = vec4(glace(P, normalize(cross(dFdx(P), dFdy(P))), ao, ar, vis), 1.0); return; }
   vec3 lum = palette(1, dv); lum *= lum;
   float grand = fbm3(vec2(P.x + P.z, P.y) * 0.03);

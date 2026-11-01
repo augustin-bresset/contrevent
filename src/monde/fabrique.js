@@ -6,6 +6,7 @@
 import { MONDE, CONTREES, LIEUX, SOLEIL, ECHELLE } from './contrees.js';
 import { creerBruit, alea } from './bruit.js';
 import { composer, emprises } from './villes.js';
+import { GRILLES, semerCase, emprisesSemees } from './semis-plan.js';
 
 const lisse = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 const mix = (a, b, t) => a + (b - a) * t;
@@ -226,8 +227,9 @@ export function creerFabrique(graine) {
       // Dans les défilés, de petites lames collées au flanc : on peut toujours souffler.
       poserAbri(xRoute(s) + cote * (c.couloir * K * 0.6 + 8), s, 26, 8, 30);
     } else if (c.relief !== 'vide') {
-      const x = xRoute(s) + cote * (22 + r() * 90), flaque = c.relief === 'flaque';
-      poserAbri(x, s, 24 + r() * 24, 7 + r() * 3, flaque ? 14 + r() * 7 : 21 + r() * 13);
+      // Assez loin pour que la lame, même longue, ne barre jamais la route.
+      const ax = 24 + r() * 24, x = xRoute(s) + cote * (ax * 1.75 + 6 + r() * 66), flaque = c.relief === 'flaque';
+      poserAbri(x, s, ax, 7 + r() * 3, flaque ? 14 + r() * 7 : 21 + r() * 13);
     }
     s += pasA;
   }
@@ -324,13 +326,24 @@ export function creerFabrique(graine) {
     }
     // Les murs : ce qui est plein ne laisse pas passer le vent.
     const dedans = new Uint8Array(n);
-    for (const e of pleins) {
-      if (e.s + e.r < s0 || e.s - e.r > s0 + nj * pasVent) continue;
+    const murer = (e) => {
+      if (e.s + e.r < s0 || e.s - e.r > s0 + nj * pasVent) return;
       const i0 = Math.max(0, Math.floor((e.x - e.r) / pasVent)), i1 = Math.min(gx - 1, Math.ceil((e.x + e.r) / pasVent));
       const j0 = Math.max(0, Math.floor((e.s - e.r - s0) / pasVent)), j1 = Math.min(nj - 1, Math.ceil((e.s + e.r - s0) / pasVent));
       for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
         if (Math.hypot((i + 0.5) * pasVent - e.x, s0 + (j + 0.5) * pasVent - e.s) > e.r + 3) continue;
         const q = j * gx + i; haut[q] += Math.min(60, e.h); dedans[q] = 1;
+      }
+    };
+    pleins.forEach(murer);
+    // Les grandes colonnes de glace et les grands rochers comptent aussi : on s'abrite derrière eux.
+    const ici = { graine, W, L, xRoute, h: sol, contreeA: (q) => contrees.findLast((c) => c.s <= q) || contrees[0],
+      plein: (x, q, m = 0) => pleins.some((e) => (x - e.x) ** 2 + (q - e.s) ** 2 < (e.r + m) ** 2) };
+    for (const G of GRILLES) if (G.cote > 8) {
+      for (let j = Math.floor(s0 / G.cote); j * G.cote < s0 + nj * pasVent; j++) for (let i = 0; i * G.cote < W; i++) {
+        semerCase(ici, i, j, G, (forme, x, q, taille, hb, kq, q0, ton, ci, cj) => {
+          for (const e of emprisesSemees(graine, forme, x, q, taille, kq, q0, ci, cj)) if (e.r >= 5) murer(e);
+        });
       }
     }
     for (let i = 0; i < gx; i++) abri[(nj - 1) * gx + i] = lireA(abriA, (i + 0.5) * pasVent, s0 + (nj - 0.5) * pasVent);

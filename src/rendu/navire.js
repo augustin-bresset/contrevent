@@ -94,7 +94,7 @@ export class Navire {
           c = mix(c, vec3(0.09, 0.05, 0.026), latte * 0.85);
           c *= 0.92 + 0.08 * sin(vUv.y * 90.0);
           vec3 fin = eclairer(c, n, vM, 0.9, soleilVu(vM, gl_FragCoord.xy), 0.9);
-          fin += c * uSoleilCol * max(dot(-n, uSoleil), 0.0) * 0.46 * (1.0 - tempeteA(-vM.z));      // la toile laisse passer le jour
+          fin += c * uSoleilCol * max(dot(-n, uSoleil), 0.0) * 0.46 * (1.0 - tempeteA(vM.x, -vM.z));      // la toile laisse passer le jour
           gl_FragColor = vec4(fin, 1.0);
         }`,
     });

@@ -1,22 +1,26 @@
-// Le son, entièrement synthétisé. Le vent n'est pas un bruit : c'est un orchestre. Un grave qui porte, un corps qui respire,
-// des voix qui hurlent dans le relief, du sable, de la toile qui claque. Des rafales le traversent de gauche à droite,
-// l'abri l'étouffe, et chaque contrée a ses bruits à elle. Une nappe très lente et un piano rare tiennent le reste.
+// Le vent est enregistré : de vrais déserts, de vraies plaines, un panneau et un fil de fer qui chantent, une église vide.
+// Ces boucles n'ont pas la même longueur et ne se répètent jamais ensemble. La force du vent passe de l'une à l'autre,
+// les rafales les traversent de gauche à droite, l'abri les étouffe. Le reste est synthétisé : les bruits de chaque contrée,
+// les pas, le feu, une nappe très lente et un piano rare.
+import { SONS } from './sons/vent.js';
+
 const GAMMES = [[0, 2, 7, 9, 12, 14, 19], [0, 3, 7, 10, 12, 15, 19], [0, 2, 5, 7, 12, 14, 17]];
 const hasard = (a, b) => a + Math.random() * (b - a);
+const lisse = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 
-// Ce que chaque sol ajoute au vent : grave, voix, sable, sifflet, et le bruit qui lui est propre.
+// Ce que chaque sol fait au vent : son grave, son chant dans les obstacles, le sable qu'il porte, et le bruit qui lui est propre.
 const LIEUX = {
-  banquise: { grave: 0.8, voix: 0.7, sable: 0.5, sifflet: 1, bruit: 'glace', tous: 9 },
-  coteaux: { grave: 0.7, voix: 0.5, sable: 0.2, sifflet: 0.2, bruit: 'oiseau', tous: 7 },
-  flaque: { grave: 0.6, voix: 0.4, sable: 0.1, sifflet: 0.3, bruit: 'eau', tous: 2.4 },
-  dunes: { grave: 0.8, voix: 0.5, sable: 1.3, sifflet: 0.3, bruit: 'grain', tous: 5 },
-  canyon: { grave: 0.9, voix: 1.4, sable: 0.5, sifflet: 0.7, bruit: 'pierre', tous: 8, echo: 1 },
-  massif: { grave: 1, voix: 1.2, sable: 0.3, sifflet: 0.6, bruit: 'oiseau', tous: 12, echo: 0.8 },
-  plateforme: { grave: 0.5, voix: 0.3, sable: 0.8, sifflet: 0.2, bruit: 'grain', tous: 9 },
-  terrasses: { grave: 0.8, voix: 0.7, sable: 0.5, sifflet: 0.4, bruit: 'oiseau', tous: 11 },
-  cimes: { grave: 1.1, voix: 1.3, sable: 0.6, sifflet: 1.3, bruit: 'glace', tous: 8, echo: 0.8 },
-  cendres: { grave: 1.4, voix: 0.7, sable: 0.6, sifflet: 0.4, bruit: 'braise', tous: 1.6 },
-  vide: { grave: 0.2, voix: 0.1, sable: 0, sifflet: 0.1, bruit: null, tous: 30 },
+  banquise: { grave: 0.8, chant: 0.9, sable: 0.5, bruit: 'glace', tous: 9 },
+  coteaux: { grave: 0.7, chant: 0.35, sable: 0.2, bruit: 'oiseau', tous: 7 },
+  flaque: { grave: 0.6, chant: 0.3, sable: 0.1, bruit: 'eau', tous: 2.4 },
+  dunes: { grave: 0.8, chant: 0.35, sable: 1.3, bruit: 'grain', tous: 5 },
+  canyon: { grave: 0.9, chant: 1.3, sable: 0.5, bruit: 'pierre', tous: 8, echo: 1 },
+  massif: { grave: 1, chant: 1.1, sable: 0.3, bruit: 'oiseau', tous: 12, echo: 0.8 },
+  plateforme: { grave: 0.5, chant: 0.3, sable: 0.8, bruit: 'grain', tous: 9 },
+  terrasses: { grave: 0.8, chant: 0.6, sable: 0.5, bruit: 'oiseau', tous: 11 },
+  cimes: { grave: 1.1, chant: 1.2, sable: 0.6, bruit: 'glace', tous: 8, echo: 0.8 },
+  cendres: { grave: 1.4, chant: 0.5, sable: 0.6, bruit: 'braise', tous: 1.6 },
+  vide: { grave: 0.2, chant: 0.1, sable: 0, bruit: null, tous: 30 },
 };
 
 export class Audio {
@@ -28,8 +32,9 @@ export class Audio {
     if (!C) return;
     const c = (this.c = new C()); this.ok = true;
     this.maitre = c.createGain(); this.maitre.gain.value = this.muet ? 0 : 1.5;
-    const lim = c.createDynamicsCompressor(); lim.threshold.value = -10; lim.ratio.value = 6;
-    this.maitre.connect(lim); lim.connect(c.destination); this.sortie = lim;
+    const lim = c.createDynamicsCompressor(); lim.threshold.value = -9; lim.ratio.value = 14; lim.knee.value = 6; lim.attack.value = 0.002; lim.release.value = 0.16;
+    const borne = c.createGain(); borne.gain.value = 0.85;
+    this.maitre.connect(lim); lim.connect(borne); borne.connect(c.destination); this.sortie = borne;
 
     // Une réverbération de plaine : longue, sombre, différente à gauche et à droite.
     const d = 5, ir = c.createBuffer(2, d * c.sampleRate, c.sampleRate);
@@ -59,8 +64,11 @@ export class Audio {
     // L'abri : tout le vent passe par ce filtre, qui se ferme derrière un mur.
     this.lpAbri = c.createBiquadFilter(); this.lpAbri.type = 'lowpass'; this.lpAbri.frequency.value = 16000; this.lpAbri.Q.value = 0.3;
     this.busV = c.createGain(); this.busV.gain.value = 1;
-    this.lpAbri.connect(this.busV); this.busV.connect(this.maitre);
-    const envoi = c.createGain(); envoi.gain.value = 0.14; this.busV.connect(envoi); envoi.connect(this.rev); this.busV.connect(this.gEcho);
+    // Le micro de plein air garde trop de grave et pas assez d'air : on rééquilibre, pour que le vent se tienne aussi sur de petites enceintes.
+    const bas = c.createBiquadFilter(), haut = c.createBiquadFilter();
+    bas.type = 'lowshelf'; bas.frequency.value = 150; bas.gain.value = -7; haut.type = 'highshelf'; haut.frequency.value = 1500; haut.gain.value = 8;
+    this.lpAbri.connect(bas); bas.connect(haut); haut.connect(this.busV); this.busV.connect(this.maitre);
+    const envoi = c.createGain(); envoi.gain.value = 0.05; this.busV.connect(envoi); envoi.connect(this.rev); this.busV.connect(this.gEcho);
 
     const couche = (b, type, f, q, pan = 0) => {
       const s = source(b), fi = c.createBiquadFilter(), g = c.createGain(), p = c.createStereoPanner();
@@ -68,24 +76,37 @@ export class Audio {
       s.connect(fi); fi.connect(g); g.connect(p); p.connect(this.lpAbri);
       return { f: fi, g, p };
     };
+    // Sous les enregistrements, un peu de poids ; dessus, le sable qui file.
     this.grave = couche(brun, 'lowpass', 170, 0.4);
-    this.corps = couche(rose, 'bandpass', 420, 0.7);
-    // Les voix : des résonances étroites qui glissent lentement. C'est elles qu'on entend hurler.
-    this.voix = [couche(rose, 'bandpass', 310, 9, -0.7), couche(rose, 'bandpass', 520, 11, 0.15), couche(rose, 'bandpass', 790, 13, 0.75)];
-    this.voixT = this.voix.map(() => ({ v: hasard(0.8, 1.3), c: 1, t: 0 }));
-    this.sifflet = couche(this.bruit, 'bandpass', 2600, 22, 0.3);
     this.sable = couche(this.bruit, 'highpass', 5200, 0.5, -0.2);
-    // La toile des capes, qui claque par saccades quand le vent forcit.
-    this.toile = couche(rose, 'bandpass', 900, 1.1, 0.1);
-    const lfo = c.createOscillator(), pl = c.createGain(); lfo.frequency.value = 11; pl.gain.value = 0; lfo.connect(pl); lfo.start();
-    const am = c.createGain(); am.gain.value = 0.5; this.toile.g.disconnect(); this.toile.g.connect(am); am.connect(this.toile.p); pl.connect(am.gain);
-    this.lfoT = lfo; this.prof = pl;
 
-    // Le grondement du furvent.
-    this.gG = c.createGain(); this.gG.gain.value = 0;
-    const lp = c.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 150; this.lpG = lp;
-    for (const f of [41.2, 41.9, 61.7]) { const o = c.createOscillator(); o.type = 'sawtooth'; o.frequency.value = f; o.connect(lp); o.start(); }
-    lp.connect(this.gG); this.gG.connect(this.maitre); this.gG.connect(this.rev);
+    // Les pistes existent tout de suite ; leur son arrive dès qu'il est décodé.
+    const piste = (sortie, freq) => {
+      const f = c.createBiquadFilter(), g = c.createGain(), p = c.createStereoPanner();
+      f.type = 'lowpass'; f.frequency.value = freq; f.Q.value = 0.4; g.gain.value = 0;
+      f.connect(g); g.connect(p); p.connect(sortie);
+      return { f, g, p, s: null };
+    };
+    this.pistes = {
+      leger: piste(this.lpAbri, 16000), plaine: piste(this.lpAbri, 16000), dunes: piste(this.lpAbri, 16000), tempete: piste(this.lpAbri, 16000),
+      chant: piste(this.lpAbri, 9000), fil: piste(this.lpAbri, 9000), abri: piste(this.maitre, 2400),
+      // La tempête, deux fois plus lente : c'est le grondement du furvent.
+      rugit: piste(this.maitre, 420),
+    };
+    const rv = c.createGain(); rv.gain.value = 0.3; this.pistes.rugit.p.connect(rv); rv.connect(this.rev);
+    for (const [nom, q] of Object.entries(SONS)) {
+      const bin = atob(q.b), o = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) o[i] = bin.charCodeAt(i);
+      c.decodeAudioData(o.buffer).then((b) => {
+        const lancer = (cle, vitesse) => {
+          const s = c.createBufferSource(), P = this.pistes[cle];
+          s.buffer = b; s.loop = true; s.loopStart = q.m; s.loopEnd = q.m + q.l; s.playbackRate.value = vitesse;
+          s.connect(P.f); s.start(0, q.m + Math.random() * q.l); P.s = s;
+        };
+        lancer(nom, 1);
+        if (nom === 'tempete') lancer('rugit', 0.5);
+      });
+    }
 
     // La nappe : trois voix désaccordées, un filtre qui respire. On l'entend à peine, on sentirait son absence.
     this.gN = c.createGain(); this.gN.gain.value = 0;
@@ -98,6 +119,7 @@ export class Audio {
     });
     this.lpN.connect(this.gN); this.gN.connect(this.rev); const dn = c.createGain(); dn.gain.value = 0.3; this.gN.connect(dn); dn.connect(this.maitre);
 
+    this.voixT = [0, 1].map(() => ({ v: 1, c: 1, t: 0, pan: 0 }));
     this.prochaine = c.currentTime + 6; this.tambour = c.currentTime; this.gamme = GAMMES[0]; this.racine = 146.83;
     this.raf = { v: 0, cible: 0, fin: 0, suite: c.currentTime + 4, pan: 0, dp: 0 }; this.lent = 0; this.bruitSuite = c.currentTime + 3;
     this.lieu = LIEUX.banquise; this.chord = c.currentTime; this.feuSuite = 0; this.dernierPas = 0;
@@ -193,7 +215,7 @@ export class Audio {
   }
   alerte() { if (this.ok) { this.tom(0.7, 90); this.note(this.racine / 4, 0.3, 6); } }
 
-  maj(dt, { force = 0, tempete = 0, combat = 0, camp = 0, silence = 0, abri = 0, relief = 'banquise', avance = 0, vitesse = 0 }) {
+  maj(dt, { force = 0, tempete = 0, combat = 0, camp = 0, silence = 0, abri = 0, relief = 'banquise', avance = 0, approche = 0 }) {
     if (!this.ok || this.pause) return;
     const c = this.c, t = c.currentTime, L = (this.lieu = LIEUX[relief] || LIEUX.banquise), R = this.raf;
     this.lent -= dt;
@@ -216,30 +238,31 @@ export class Audio {
     this.regler(this.busV.gain, (1 - 0.5 * ab) * (1 - silence), 0.5);
     this.regler(this.gEcho.gain, (L.echo || 0) * 0.3, 2);
 
-    this.regler(this.grave.g.gain, (0.05 + tot * 0.26) * L.grave + tempete * 0.14, 0.6);
-    this.regler(this.grave.f.frequency, 120 + tot * 150, 0.8);
-    this.regler(this.corps.g.gain, 0.09 + tot * 0.62 + tempete * 0.16, 0.4);
-    this.regler(this.corps.f.frequency, 260 + tot * 900 + 140 * Math.sin(t * 0.37) + 90 * Math.sin(t * 1.1), 0.5);
-    this.regler(this.corps.p.pan, R.pan * r * 0.8, 0.5);
-
-    this.voix.forEach((v, i) => {
+    const P = this.pistes, q = (nom, g, f, v, pan = 0, tg = 0.5) => {
+      const e = P[nom]; this.regler(e.g.gain, g, tg); if (f) this.regler(e.f.frequency, f, 0.6); this.regler(e.p.pan, pan, 0.7);
+      if (e.s && v) this.regler(e.s.playbackRate, v, 0.8);
+    };
+    // La force passe d'un vent à l'autre : une brise, une plaine, puis le désert qui hurle.
+    const clair = 1500 + tot * 13000, passe = R.pan * r * 0.75;
+    q('leger', (1 - lisse(0.25, 0.7, tot)) * (0.34 + tot * 0.9), clair, 0.96 + tot * 0.12, passe * 0.4);
+    q('plaine', lisse(0.1, 0.48, tot) * (1 - 0.5 * lisse(0.75, 1.15, tot)) * (0.5 + tot * 0.5), clair, 0.9 + tot * 0.22 + r * 0.06, passe);
+    q('dunes', lisse(0.34, 0.8, tot) * 0.62 * Math.min(1.2, L.sable + 0.3), clair, 0.94 + tot * 0.14, -passe);
+    q('tempete', lisse(0.5, 1, tot) * (0.45 + tot * 0.55) + tempete * 0.3, clair, 0.88 + tot * 0.2 + r * 0.08, passe * 0.6);
+    // Ce qui chante : le vent dans ce qu'il rencontre. Il monte avec la force, et il n'est jamais deux fois à la même hauteur.
+    ['chant', 'fil'].forEach((nom, i) => {
       const w = this.voixT[i];
-      if (t > w.t) { w.t = t + hasard(2.5, 9); w.c = hasard(0.72, 1.42); }
-      w.v += (w.c - w.v) * 0.05;
-      const base = [300, 510, 780][i] * w.v * (0.8 + tot * 0.9);
-      this.regler(v.f.frequency, base + 40 * Math.sin(t * (0.5 + i * 0.31)), 0.7);
-      this.regler(v.g.gain, Math.max(0, tot - 0.18 - i * 0.07) * 3.4 * L.voix * (0.55 + 0.45 * Math.sin(t * (0.23 + i * 0.17) + i * 2)), 0.7);
+      if (t > w.t) { w.t = t + hasard(4, 13); w.c = hasard(0.8, 1.26); w.pan = hasard(-0.8, 0.8); }
+      w.v += (w.c - w.v) * 0.03;
+      q(nom, lisse(0.28 + i * 0.1, 0.85, tot) * (i ? 0.4 : 0.6) * L.chant * (0.4 + 0.6 * Math.sin(t * (0.19 + i * 0.13) + i * 2) ** 2), 0, w.v * (0.84 + tot * 0.34), w.pan, 1.1);
     });
-    this.regler(this.sifflet.f.frequency, 1900 + tot * 2000 + 420 * Math.sin(t * 0.8), 0.4);
-    this.regler(this.sifflet.g.gain, Math.max(0, tot - 0.35) ** 2 * 1.3 * L.sifflet, 0.4);
-    this.regler(this.sifflet.p.pan, -R.pan * 0.7, 0.8);
-    this.regler(this.sable.g.gain, (tot * tot * 0.34 + r * 0.09) * L.sable, 0.25);
-    this.regler(this.sable.p.pan, R.pan, 0.4);
-    this.regler(this.toile.g.gain, Math.max(0, tot - 0.4) * 0.7 * (0.3 + 0.7 * Math.min(1, vitesse / 3 + r)), 0.3);
-    this.regler(this.prof.gain, 0.5, 0.5); this.regler(this.lfoT.frequency, 8 + tot * 7 + 2 * Math.sin(t * 2.3), 0.2);
+    // Derrière un mur : le hurlement au loin, et plus rien d'autre.
+    q('abri', ab * (0.2 + tot * 0.75) * (1 - silence), 1100 + tot * 1600, 0.94 + tot * 0.1);
+    q('rugit', tempete * 0.5 + approche * 0.42, 240 + (tempete + approche) * 260, 0.46 + tempete * 0.1, 0, 0.9);
 
-    this.regler(this.gG.gain, tempete * 0.3 + (relief === 'cendres' ? 0.05 : 0), 1.2);
-    this.regler(this.lpG.frequency, 110 + tempete * 200, 1);
+    this.regler(this.grave.g.gain, (0.04 + tot * 0.14) * L.grave + tempete * 0.08, 0.6);
+    this.regler(this.grave.f.frequency, 120 + tot * 150, 0.8);
+    this.regler(this.sable.g.gain, (tot * tot * 0.13 + r * 0.04) * L.sable, 0.25);
+    this.regler(this.sable.p.pan, R.pan, 0.4);
 
     // La nappe monte avec la route : au bout du monde, elle est presque une menace.
     this.regler(this.gN.gain, (0.012 + avance * 0.03) * (1 - tempete * 0.7) * (1 - silence * 0.5) * (1 + camp * 0.8), 2.5);

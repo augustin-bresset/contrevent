@@ -3,6 +3,7 @@
 // donc les shaders lisent le monde en coordonnées absolues sans savoir ce qui est chargé.
 import * as THREE from 'three';
 import { MONDE, CLIMATS, COUCHE } from './contrees.js';
+import { GRILLES, semerCase, emprisesSemees } from './semis-plan.js';
 
 const { W, L, pas, pasVent, pasLum, tranche: T, nbTranches: NT } = MONDE;
 const mod = (a, n) => ((a % n) + n) % n;
@@ -48,15 +49,44 @@ export class Monde {
   }
 
   autour(x, s) { return this.casesBati.get(Math.floor(x / 64) * 4096 + Math.floor(s / 64)); }
+  // Ce qui est semé et ne se traverse pas (glace, rochers) : relu autour de la Horde à mesure qu'elle avance.
+  majSolides(x, s) {
+    const cle = Math.round(x / 24) * 4096 + Math.round(s / 24);
+    if (cle === this.cleSolides) return;
+    this.cleSolides = cle;
+    this.casesSolides = new Map();
+    const R = 210, L = this.casesSolides;
+    for (const G of GRILLES) {
+      const n = Math.ceil(R / G.cote), i0 = Math.floor(x / G.cote), j0 = Math.floor(s / G.cote);
+      for (let j = j0 - n; j <= j0 + n; j++) for (let i = i0 - n; i <= i0 + n; i++) {
+        semerCase(this, i, j, G, (forme, sx, ss, taille, hb, k, q0, ton, ci, cj) => {
+          for (const e of emprisesSemees(this.graine, forme, sx, ss, taille, k, q0, ci, cj)) {
+            for (let b = Math.floor((e.s - e.r) / 64); b <= Math.floor((e.s + e.r) / 64); b++) for (let a = Math.floor((e.x - e.r) / 64); a <= Math.floor((e.x + e.r) / 64); a++) {
+              const c = a * 4096 + b;
+              if (!L.has(c)) L.set(c, []);
+              L.get(c).push(e);
+            }
+          }
+        }, x, s, R);
+      }
+    }
+  }
   plein(x, s, marge = 0) {
     const l = this.autour(x, s);
     if (l) for (const e of l) { const r = e.r + marge; if ((x - e.x) ** 2 + (s - e.s) ** 2 < r * r) return true; }
     return false;
   }
+  // Le bâti, plus ce qui est semé.
+  bloque(x, s, marge = 0) {
+    if (this.plein(x, s, marge)) return true;
+    const l = this.casesSolides?.get(Math.floor(x / 64) * 4096 + Math.floor(s / 64));
+    if (l) for (const e of l) { const r = e.r + marge; if ((x - e.x) ** 2 + (s - e.s) ** 2 < r * r) return true; }
+    return false;
+  }
   // Un corps qui mord sur un mur en ressort par le plus court.
   ecarter(m) {
-    const l = this.autour(m.x, m.s);
-    if (l) for (const e of l) {
+    const c = Math.floor(m.x / 64) * 4096 + Math.floor(m.s / 64);
+    for (const l of [this.casesBati.get(c), this.casesSolides?.get(c)]) if (l) for (const e of l) {
       const dx = m.x - e.x, ds = m.s - e.s, d = Math.hypot(dx, ds) || 1, r = e.r + 0.5;
       if (d < r) { m.x = e.x + dx / d * r; m.s = e.s + ds / d * r; }
     }

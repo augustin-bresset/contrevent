@@ -27,7 +27,7 @@ export class Lignes {
     const v = gpu.addVariable('tPos', /* glsl */`
       uniform float uTemps, uDt, uVitesse, uFenetre;
       uniform vec2 uCentre, uHorde;
-      uniform float uHordeR;
+      uniform float uHordeR, uEtale;
       ${GLSL_VENT}
       float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
       void main() {
@@ -40,18 +40,21 @@ export class Lignes {
         vec2 dh = e.xy - uHorde; float qh = dot(dh, dh) / (uHordeR * uHordeR);
         w += dh / uHordeR * 0.9 * exp(-qh);
         vec2 p = e.xy + w * uVitesse * uDt;
-        vec2 rel = (p - uCentre) / uFenetre;
+        // Le furvent déborde la fenêtre : les filets s'y sèment jusqu'à perte de vue, serrés près de la Horde, là où l'œil les voit de près.
+        float F = uFenetre * (1.0 + uEtale * 3.2);
+        vec2 rel = (p - uCentre) / F;
         bool sortie = abs(rel.x) > 0.5 || abs(rel.y) > 0.5;
         if (floor(ph1) != floor(ph0) || sortie || e.x == 0.0) {
           float c = floor(ph1);
-          p = uCentre + (vec2(hash(uv + c * 0.071), hash(uv.yx + c * 0.113)) - 0.5) * uFenetre;
+          vec2 q = vec2(hash(uv + c * 0.071), hash(uv.yx + c * 0.113)) * 2.0 - 1.0;
+          p = uCentre + sign(q) * pow(abs(q), vec2(1.0 + uEtale * 1.1)) * 0.5 * F;
           gl_FragColor = vec4(p, p);
         } else gl_FragColor = vec4(p, e.xy);
       }`, depart);
     gpu.setVariableDependencies(v, [v]);
     Object.assign(v.material.uniforms, this.commun, {
       uTemps: { value: 0 }, uDt: { value: 1 / 60 }, uVitesse: { value: 26 }, uFenetre: { value: FENETRE },
-      uCentre: { value: this.centre }, uHorde: { value: new THREE.Vector2() }, uHordeR: { value: 8 },
+      uCentre: { value: this.centre }, uHorde: { value: new THREE.Vector2() }, uHordeR: { value: 8 }, uEtale: { value: 0 },
     });
     const err = gpu.init();
     if (err) throw new Error(err);

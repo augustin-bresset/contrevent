@@ -3,7 +3,7 @@
 // Les pierres sont des scans : elles s'enfoncent dans le sol, et le vent dépose sur elles ce qu'il transporte.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { SEMIS } from '../monde/contrees.js';
+import { GRILLES, semerCase, tirage } from '../monde/semis-plan.js';
 import { GLSL_COMMUN, GLSL_OMBRE, GLSL_GLACE } from './communs.js';
 import { geometrie } from './monuments.js';
 import { ROCHERS } from './rochers-maillage.js';
@@ -177,39 +177,20 @@ export class Semis {
     this.o = new THREE.Object3D(); this.tons = {};
   }
   ton(hex) { return this.tons[hex] || (this.tons[hex] = new THREE.Color(hex).convertLinearToSRGB()); }
-  graine(a, b, k) { let h = Math.imul(a * 73856093 ^ b * 19349663 ^ k * 83492791 ^ this.monde.graine, 1540483477); h ^= h >>> 15; h = Math.imul(h, 739982445); return ((h ^ (h >>> 13)) >>> 0) / 4294967296; }
-
-  case(i, j, cote, echT, regle, cx, cs, grands, R) {
-    const { monde: M } = this, x0 = i * cote, s0 = j * cote, c = M.contreeA(s0);
-    const table = SEMIS[c.relief] || [];
-    for (let k = 0; k < table.length; k++) {
-      const [forme, chance, [t0, t1], ton, opt] = table[k];
-      if (grands && forme !== 'rocher' && forme !== 'eclat' && forme !== 'glacon') continue;
-      if (this.graine(i, j, k + regle * 31) > chance * (grands ? 0.5 : 1)) continue;
-      const x = x0 + this.graine(i, j, k + 11) * cote, s = s0 + this.graine(i, j, k + 23) * cote;
-      if (x < 0 || x > M.W || s < 0 || s > M.L) continue;
-      if (Math.hypot(x - cx, s - cs) > R) continue;
-      if (M.plein(x, s, 3)) continue;
-      const hb = M.h(x, s);
-      if (opt?.eau ? (hb > 0.25 || hb < -1.5) : hb < 0.12) continue;
-      if (Math.abs(M.h(x + 1.5, s) - M.h(x - 1.5, s)) + Math.abs(M.h(x, s + 1.5) - M.h(x, s - 1.5)) > 3.6) continue;
-      const taille = (t0 + (t1 - t0) * this.graine(i, j, k + 37) ** 2) * echT;
-      if (taille > 2 && Math.abs(x - M.xRoute(s)) < 6) continue;
-      const q0 = this.graine(i, j, k + 61);
-      const proche = Math.hypot(x - cx, s - cs) < 280, l = proche ? 0 : 1;
-      const nom = forme === 'rocher' ? `${BOULES[Math.floor(q0 * 3)]}${l}` : forme === 'eclat' ? `${FLECHES[Math.floor(q0 * 2)]}${l}` : forme === 'glacon' ? `glace${q0 < 0.5 ? 'C' : 'B'}${l}` : forme;
-      const q = this.m[nom];
-      if (q.n >= MAX) continue;
-      const o = this.o, glacon = forme === 'glacon', eclat = forme === 'eclat', pierre = eclat || forme === 'rocher' || glacon;
-      o.position.set(x, Math.max(hb, 0) - taille * (pierre ? 0.14 : 0.04), -s);
-      o.rotation.set((this.graine(i, j, k + 41) - 0.5) * (eclat ? 0.16 : 0.3), this.graine(i, j, k + 43) * 6.28, (this.graine(i, j, k + 47) - 0.5) * (eclat ? 0.16 : 0.3));
-      o.scale.setScalar(glacon ? taille * 0.1 : eclat ? taille * 0.52 : taille); o.updateMatrix();
-      q.im.setMatrixAt(q.n, o.matrix);
-      const t = this.ton(ton), v = 0.86 + this.graine(i, j, k + 53) * 0.28;
-      q.col.setXYZ(q.n, t.r * v, t.g * v, t.b * v); q.ir.setX(q.n, R);
-      q.n++;
-    }
-  }
+  poser = (forme, x, s, taille, hb, k, q0, ton, i, j) => {
+    const M = this.monde, g = (n) => tirage(M.graine, i, j, n), proche = Math.hypot(x - this.cx, s - this.cs) < 280, l = proche ? 0 : 1;
+    const nom = forme === 'rocher' ? `${BOULES[Math.floor(q0 * 3)]}${l}` : forme === 'eclat' ? `${FLECHES[Math.floor(q0 * 2)]}${l}` : forme === 'glacon' ? `glace${q0 < 0.5 ? 'C' : 'B'}${l}` : forme;
+    const q = this.m[nom];
+    if (q.n >= MAX) return;
+    const o = this.o, glacon = forme === 'glacon', eclat = forme === 'eclat', pierre = eclat || forme === 'rocher' || glacon;
+    o.position.set(x, Math.max(hb, 0) - taille * (pierre ? 0.14 : 0.04), -s);
+    o.rotation.set((g(k + 41) - 0.5) * (eclat ? 0.16 : 0.3), g(k + 43) * 6.28, (g(k + 47) - 0.5) * (eclat ? 0.16 : 0.3));
+    o.scale.setScalar(glacon ? taille * 0.1 : eclat ? taille * 0.52 : taille); o.updateMatrix();
+    q.im.setMatrixAt(q.n, o.matrix);
+    const t = this.ton(ton), v = 0.86 + g(k + 53) * 0.28;
+    q.col.setXYZ(q.n, t.r * v, t.g * v, t.b * v); q.ir.setX(q.n, this.R);
+    q.n++;
+  };
   maj(x, s) {
     const C = 24, F = 8, L = 120, ci = Math.floor(x / 12), cj = Math.floor(s / 12), cle = ci + ':' + cj;
     this.uC.value.set(x, -s);
@@ -217,13 +198,12 @@ export class Semis {
     this.cle = cle;
     for (const q of Object.values(this.m)) q.n = 0;
     // Des disques, pas des rectangles, tous centrés sur la Horde : le menu sous ses pas, le paysage autour, les grands blocs jusqu'à l'horizon.
-    const grille = (cote, R, ech, regle, grands) => {
-      const n = Math.ceil(R / cote), i0 = Math.floor(x / cote), j0 = Math.floor(s / cote);
-      for (let j = j0 - n; j <= j0 + n; j++) for (let i = i0 - n; i <= i0 + n; i++) this.case(i, j, cote, ech, regle, x, s, grands, R);
-    };
-    grille(L, 3000, 3.4, 2, true);
-    grille(C, 640, 1.4, 0, false);
-    grille(F, 190, 0.5, 1, false);
+    this.cx = x; this.cs = s;
+    for (const G of GRILLES) {
+      const { cote, R } = G, n = Math.ceil(R / cote), i0 = Math.floor(x / cote), j0 = Math.floor(s / cote);
+      this.R = R;
+      for (let j = j0 - n; j <= j0 + n; j++) for (let i = i0 - n; i <= i0 + n; i++) semerCase(this.monde, i, j, G, this.poser, x, s, R);
+    }
     for (const q of Object.values(this.m)) {
       const im = q.im;
       im.count = q.n; im.instanceMatrix.clearUpdateRanges(); im.instanceMatrix.addUpdateRange(0, q.n * 16); im.instanceMatrix.needsUpdate = true;

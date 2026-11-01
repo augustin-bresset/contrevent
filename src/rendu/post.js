@@ -80,6 +80,7 @@ export class Post {
     this.hist = [new THREE.WebGLRenderTarget(4, 4, hdr), new THREE.WebGLRenderTarget(4, 4, hdr)];
     this.ao = new THREE.WebGLRenderTarget(4, 4, { ...base, type: THREE.UnsignedByteType });
     this.vol = new THREE.WebGLRenderTarget(4, 4, hdr);
+    this.fr = new THREE.WebGLRenderTarget(4, 4, hdr);
     this.nu = [new THREE.WebGLRenderTarget(4, 4, hdr), new THREE.WebGLRenderTarget(4, 4, hdr)]; this.pairN = 0;
     this.bas = Array.from({ length: NIV }, () => new THREE.WebGLRenderTarget(4, 4, hdr));
     this.haut = Array.from({ length: NIV }, () => new THREE.WebGLRenderTarget(4, 4, hdr));
@@ -166,7 +167,7 @@ export class Post {
           for (int i = 0; i < 9; i++) {
             float t = (float(i) + j) * dt;
             vec3 P = uCam + R * t;
-            float s = -P.z, y = P.y - uSolY, f = tempeteA(s);
+            float s = -P.z, y = P.y - uSolY, f = tempeteA(P.x, s);
             float dens = (exp(-max(y, 0.0) / 22.0) * (0.06 + 1.5 * sable(P) * sable(P)) * 0.0006 * uVol) + f * 0.009;
             float sol = texture2D(tL, vec2(P.x, s) / uAnneau).r;
             float vis = mix(sol, 1.0, smoothstep(6.0, 60.0, y));
@@ -253,15 +254,114 @@ export class Post {
         }`,
     });
 
+    // Le mur du furvent : un seul volume, sans bords, plus large que tout ce qu'on peut voir. La tête surplombe le pied,
+    // la poussière roule en choux énormes, et le soleil frappe sa face. Il se dissout en arrivant sur l'œil : dedans, on voit.
+    this.uF = { ...u, tD: { value: this.prof }, tN3: this.uN.tN3, ...pos, uI: { value: 0 }, uSolY: { value: 0 }, uTon: { value: new THREE.Color(1, 1, 1) }, uPas: { value: 40 } };
+    this.mFront = new THREE.ShaderMaterial({
+      ...opt, uniforms: this.uF,
+      fragmentShader: /* glsl */`
+        precision highp float; precision highp sampler3D;
+        uniform sampler2D tD; uniform sampler3D tN3; uniform float uI, uSolY; uniform vec3 uTon; uniform int uPas; varying vec2 vUv;
+        ${GLSL_POS}
+        ${GLSL_COMMUN}
+        const float H = 640.0;
+        float ign(vec2 p) { return fract(52.9829189 * fract(dot(p, vec2(0.06711056, 0.00583715)))); }
+        float reb(float x, float a, float b) { return clamp((x - a) / (b - a), 0.0, 1.0); }
+        // La forme du mur, comme une surface : F > 0 à l'intérieur. De grands choux, et de plus petits sur les grands.
+        float champ(vec3 p, bool fin, out float q) {
+          float s = -p.z, y = p.y - uSolY, yn = max(y, 0.0) / H, nez = 130.0 * smoothstep(0.04, 0.4, yn) * smoothstep(1.2, 0.6, yn);
+          q = s - (uFrontT.x + ondeFront(p.x) - nez);
+          if (q < -430.0) return -430.0;
+          vec3 w = vec3(p.x, y * 1.35 - uTemps * 13.0, q * 0.84 + uTemps * 7.0);
+          vec4 n = texture(tN3, w * 0.00074), n2 = texture(tN3, w.zxy * 0.0024 + 0.37);
+          float F = q + (n.r - 0.62) * 1150.0 + (n2.g - 0.62) * 340.0;
+          // Le sommet : de grands dômes, qui se dressent à mesure que le mur arrive.
+          float haut = H * (1.05 + 0.34 * sin(p.x * 0.0023 + 0.7) + 0.22 * sin(p.x * 0.0061 + 2.1)) * (0.3 + 0.7 * uFrontT.z);
+          F -= max(y - haut * 0.45, 0.0) * 2.6;
+          if (fin && F > -130.0) F += (texture(tN3, w * 0.0086).r - 0.62) * 170.0 + (texture(tN3, w.yzx * 0.021).g - 0.62) * 46.0;
+          return F;
+        }
+        // Combien de poussière en p.
+        float densite(vec3 p, bool fin, out float q) {
+          float F = champ(p, fin, q), y = p.y - uSolY;
+          if (q < -430.0) return 0.0;
+          float d = reb(F, 0.0, 46.0) * 1.6;
+          // Devant le pied, les doigts de sable que le mur pousse au ras du sol.
+          float ras = smoothstep(58.0, 2.0, y) * smoothstep(-320.0, -40.0, q);
+          if (ras > 0.0) {
+            vec4 r = texture(tN3, vec3(p.x * 0.0031, y * 0.007, q * 0.0007 + uTemps * 0.14));
+            d = max(d, (0.04 + reb(r.r, 0.54, 0.84) * 0.42) * ras);
+          }
+          // Derrière la tête, le corps du furvent ne se voit plus : c'est l'air où l'on marche.
+          return d * mix(0.03, 1.0, smoothstep(880.0, 520.0, q));
+        }
+        void main() {
+          float z = texture2D(tD, vUv).r;
+          vec3 R = relatif(vUv, z); float dS = z < 1.0 ? length(R) : 1e6; vec3 V = normalize(R);
+          // Une montagne que la brume a mangée ne cache plus le mur : les mêmes lois que l'air.
+          float loin = 0.0;
+          if (z < 1.0) {
+            float a = (uCam.y - uSolY) / uBrumeH, b = V.y * dS / uBrumeH, fq = abs(b) < 1e-3 ? 1.0 : (1.0 - exp(-b)) / b;
+            loin = 1.0 - smoothstep(0.05, 0.32, exp(-uBrume * exp(-max(a, 0.0)) * dS * fq) * (1.0 - smoothstep(uBrouillard * 0.5, uBrouillard * 1.22, dS)));
+          }
+          // Le rayon ne compte que dans la tranche où le mur se trouve.
+          float sA = uFrontT.x - 640.0, sB = uFrontT.x + 880.0, sC = -uCam.z, vs = -V.z, t0 = 0.0, t1 = loin > 0.0 ? 5200.0 : min(dS, 5200.0);
+          if (abs(vs) > 1e-4) { float a = (sA - sC) / vs, b = (sB - sC) / vs; t0 = max(t0, min(a, b)); t1 = min(t1, max(a, b)); }
+          else if (sC < sA || sC > sB) { gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0); return; }
+          float yH = uSolY + H * 1.9;
+          if (V.y > 1e-4) t1 = min(t1, (yH - uCam.y) / V.y);
+          else if (V.y < -1e-4) { t1 = min(t1, (uSolY - 12.0 - uCam.y) / V.y); t0 = max(t0, (yH - uCam.y) / V.y); }
+          if (t1 <= t0) { gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0); return; }
+          float dt = max((t1 - t0) / float(uPas), 14.0), j = ign(gl_FragCoord.xy + uI * 5.588), T = 1.0;
+          vec3 L = vec3(0.0), hautC = cielLu(vec3(0.0, 1.0, 0.0)), basC = cielLu(normalize(vec3(V.x, 0.05, V.z)));
+          bool peau = false; float lamb = 1.0, ciel = 0.5;
+          float mu = dot(V, uSoleil), ph = 0.5 + 0.55 * pow(max(-mu, 0.0), 2.0) + 1.1 * pow(max(mu, 0.0), 8.0), jour = 1.0 - uNuit * 0.9;
+          for (int i = 0; i < uPas; i++) {
+            float t = t0 + (float(i) + j) * dt;
+            if (t >= t1) break;
+            vec3 P = uCam + V * t;
+            float q, d = densite(P, true, q);
+            d *= smoothstep(50.0, 250.0, t) * (t < dS ? 1.0 : loin);
+            if (d < 0.004) continue;
+            // La peau du mur, une fois par rayon : c'est elle qui dessine les choux.
+            if (!peau && d > 0.3) {
+              peau = true;
+              // Plus la peau est loin, plus on la juge large : pas de grain qu'un pixel ne saurait montrer.
+              vec2 h = vec2(20.0 + t * 0.035, 0.0);
+              bool fn = t < 900.0;
+              float q3, F0 = champ(P, fn, q3);
+              vec3 G = vec3(champ(P + h.xyy, fn, q3) - F0, champ(P + h.yxy, fn, q3) - F0, champ(P + h.yyx, fn, q3) - F0);
+              vec3 n = -normalize(G);
+              lamb = max(dot(n, uSoleil) * 0.74 + 0.26, 0.0);
+              ciel = 0.5 + 0.5 * n.y;
+            }
+            // Le soleil vient de côté : ce qui est derrière un chou est dans son ombre.
+            float tau = 0.0, q2;
+            for (int k = 0; k < 4; k++) { float l = 26.0 * pow(2.3, float(k)); tau += densite(P + uSoleil * l, false, q2) * l; }
+            float haut = densite(P + vec3(0.0, 120.0, 0.0), false, q2);
+            float yn = clamp((P.y - uSolY) / H, 0.0, 1.0), e = exp(-tau * 0.0034), creux = 1.0 - 0.6 * haut / 1.6;
+            vec3 alb = mix(vec3(0.5, 0.3, 0.18), vec3(0.92, 0.72, 0.52), smoothstep(0.02, 0.8, yn)) * uTon;
+            vec3 S = uSoleilCol * alb * jour * (e * ph * lamb * 1.5 + 0.05);
+            S += mix(basC * 0.3, hautC * 0.8, creux * ciel) * alb * creux;
+            S *= mix(0.5, 1.0, smoothstep(0.0, 0.16, yn));
+            S += vec3(0.62, 0.66, 0.86) * uEclair * 2.6 * (0.2 + 0.8 * (1.0 - e));
+            float a = 1.0 - exp(-d * dt * 0.05);
+            L += T * S * a; T *= 1.0 - a;
+            if (T < 0.012) break;
+          }
+          gl_FragColor = vec4(L, T);
+        }`,
+    });
+
     // L'air : le ciel derrière tout, et la brume devant ce qui s'éloigne.
     this.uA = {
-      ...u, tC: { value: null }, tD: { value: this.prof }, tAO: { value: this.ao.texture }, tVol: { value: this.vol.texture }, tNu: { value: null }, ...pos,
-      uAOn: { value: 1 }, uVolOn: { value: 1 }, uSolY: { value: 0 }, uMonts: { value: 1 },
+      ...u, tC: { value: null }, tD: { value: this.prof }, tAO: { value: this.ao.texture }, tVol: { value: this.vol.texture }, tNu: { value: null }, tFr: { value: this.fr.texture }, ...pos,
+      uAOn: { value: 1 }, uVolOn: { value: 1 }, uFrOn: { value: 0 }, uSolY: { value: 0 }, uMonts: { value: 1 },
     };
     this.mAir = new THREE.ShaderMaterial({
       ...opt, uniforms: this.uA,
       fragmentShader: /* glsl */`
-        precision highp float; uniform sampler2D tC, tD, tAO, tVol, tNu; uniform float uAOn, uVolOn, uSolY, uMonts; varying vec2 vUv;
+        precision highp float; uniform sampler2D tC, tD, tAO, tVol, tNu, tFr; uniform float uAOn, uVolOn, uFrOn, uSolY, uMonts; varying vec2 vUv;
         ${GLSL_POS}
         ${GLSL_COMMUN}
         float crete(float a, float f, float s) { return fbm3(vec2(a * f + s, s * 3.1)); }
@@ -311,6 +411,7 @@ export class Post {
             c = mix(c, cielLu(vec3(0.0, 1.0, 0.0)) * 0.82 + uSoleilCol * 0.17, mer);
           }
           if (uVolOn > 0.5) { vec4 v = texture2D(tVol, vUv); c = c * v.a + v.rgb; }
+          if (uFrOn > 0.5) { vec4 v = texture2D(tFr, vUv); c = c * v.a + v.rgb; }
           c = mix(c, BLANC_FIN, uReve);
           gl_FragColor = vec4(c, 1.0);
         }`,
@@ -400,7 +501,7 @@ export class Post {
           vec3 c;
           if (uFlou > 0.001) {
             c = vec3(0.0);
-            for (int i = 0; i < 12; i++) { float k = 1.0 - float(i) / 12.0 * uFlou * 0.075; c += texture2D(tS, 0.5 + d * k).rgb; }
+            for (int i = 0; i < 12; i++) { float k = 1.0 - float(i) / 12.0 * uFlou * 0.022; c += texture2D(tS, 0.5 + d * k).rgb; }
             c /= 12.0;
           } else {
             c = texture2D(tS, uv).rgb;
@@ -429,7 +530,7 @@ export class Post {
     this.prof.image.width = W; this.prof.image.height = H; this.prof.needsUpdate = true;
     this.scene.setSize(W, H); this.fini.setSize(W, H); this.air.setSize(W, H);
     this.hist[0].setSize(W, H); this.hist[1].setSize(W, H);
-    this.ao.setSize(W >> 1, H >> 1); this.vol.setSize(W >> 1, H >> 1);
+    this.ao.setSize(W >> 1, H >> 1); this.vol.setSize(W >> 1, H >> 1); this.fr.setSize(W >> 1, H >> 1);
     this.nu[0].setSize(W >> 2, H >> 2); this.nu[1].setSize(W >> 2, H >> 2);
     this.tailles = [];
     for (let i = 0; i < NIV; i++) {
@@ -441,7 +542,7 @@ export class Post {
     this.uAO.uPx.value.set(2 / W, 2 / H);
   }
   passe(mat, cible) { this.quad.material = mat; this.r.setRenderTarget(cible); this.r.render(this.sc, this.cam); }
-  rendre(scene, air, camera, { solY, ventX, ventS, couv, teinteAir, vol }) {
+  rendre(scene, air, camera, { solY, ventX, ventS, couv, teinteAir, vol, front }) {
     const r = this.r, P = camera.projectionMatrix.elements, W = this.W, H = this.H;
     // Le décalage de l'image : un huitième à un demi-pixel, toujours différent.
     const J = this.taa ? HALTON[this.image++ % 16] : [0, 0];
@@ -464,13 +565,17 @@ export class Post {
       Object.assign(this.uV.uI, { value: I }); this.uV.uSolY.value = solY; this.uV.uVentV.value.set(ventX, ventS); this.uV.uTon.value.copy(teinteAir); this.uV.uVol.value = vol;
       this.passe(this.mVol, this.vol);
     }
+    if (front) {
+      const F = this.uF; F.uI.value = I; F.uSolY.value = solY; F.uTon.value.copy(teinteAir);
+      this.passe(this.mFront, this.fr);
+    }
     const Nu = this.uN, cN = this.nu[this.pairN];
     Nu.tNH.value = this.nu[1 - this.pairN].texture; Nu.uPrec.value.copy(this.vpAvant); Nu.uI.value = I; Nu.uCouv.value = couv;
     Nu.uVentN.value.x -= ventX * 0.9; Nu.uVentN.value.y += ventS * 0.9;
     this.passe(this.mNuage, cN);
     this.pairN = 1 - this.pairN;
     const A = this.uA;
-    A.tC.value = this.scene.texture; A.uAOn.value = this.aoActif ? 1 : 0; A.uVolOn.value = this.volActif ? 1 : 0; A.uSolY.value = solY; A.tNu.value = cN.texture;
+    A.tC.value = this.scene.texture; A.uAOn.value = this.aoActif ? 1 : 0; A.uVolOn.value = this.volActif ? 1 : 0; A.uSolY.value = solY; A.tNu.value = cN.texture; A.uFrOn.value = front ? 1 : 0;
     this.passe(this.mAir, this.air);
 
     let src = this.air.texture;

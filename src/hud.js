@@ -40,7 +40,9 @@ export class Hud {
     l.lastChild.textContent = texte;
     if (h) l.title = h.nom;
     this.eJour.append(l);
-    while (this.eJour.children.length > 2) this.eJour.firstChild.remove();
+    // Deux voix au plus, et une seule si une consigne est affichée : on doit pouvoir tout lire d'un coup d'œil.
+    const garde = this.eAide.classList.contains('vue') ? 1 : 2;
+    while (this.eJour.children.length > garde) this.eJour.firstChild.remove();
     setTimeout(() => { l.classList.add('fuit'); setTimeout(() => l.remove(), 1600); }, 5200 + texte.length * 42);
   }
 
@@ -59,7 +61,7 @@ export class Hud {
 
   aide(t, duree = 0) {
     clearTimeout(this.tAide);
-    this.eAide.textContent = t; this.eAide.classList.toggle('vue', !!t);
+    this.eAide.textContent = t; this.eAide.classList.remove('vue'); void this.eAide.offsetWidth; this.eAide.classList.toggle('vue', !!t);
     if (duree) this.tAide = setTimeout(() => this.eAide.classList.remove('vue'), duree * 1000);
   }
 
@@ -91,9 +93,5 @@ export class Hud {
     e.textContent = texte; e.className = classe; e.hidden = !texte;
   }
 
-  teinte(c) {
-    const r = document.documentElement.style;
-    r.setProperty('--encre', `color-mix(in srgb, ${c.encre} 62%, #0b1420)`); r.setProperty('--ciel', c.ciel);
-  }
   sombre(v) { document.body.classList.toggle('sombre', v); }
 }

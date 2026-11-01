@@ -27,7 +27,6 @@ import { Herbe } from './rendu/herbe.js';
 import { Rafales } from './rendu/rafales.js';
 import { Tornades } from './rendu/tornades.js';
 import { Eclats, POUSSIERE, GOUTTE, BRAISE, FUMEE, FLAMME } from './rendu/eclats.js';
-import { Front } from './rendu/front.js';
 import { Filets } from './rendu/filets.js';
 import { Marques } from './rendu/marques.js';
 import { Ombres } from './rendu/ombres.js';
@@ -109,7 +108,6 @@ const filets = new Filets(renderer, lignes, tex.tH, tex.tPal, uAnneau, monde.L);
 const herbe = new Herbe(terrain.u); scene.add(herbe.mesh);
 const tornades = new Tornades(tex.tH, tex.tPal, uAnneau, monde.L); sceneAir.add(tornades.mesh);
 const eclats = new Eclats(); sceneAir.add(eclats.mesh);
-const front = new Front(terrain.u, monde.W); sceneAir.add(front.groupe);
 const fil = new Fil(monde); sceneAir.add(fil.mesh);
 const figures = new Figures(23, { echelle: 0.68, reflets: true, commun: terrain.u }); scene.add(figures.groupe); sceneOmbre.add(figures.ombre);
 const assaillants = new Figures(14, { echelle: 0.7, commun: terrain.u }); scene.add(assaillants.groupe); sceneOmbre.add(assaillants.ombre);
@@ -117,7 +115,7 @@ const monuments = new Monuments(monde, terrain.u, matieres); scene.add(monuments
 const navire = new Navire(terrain.u); scene.add(navire.groupe);
 const poussiere = new Poussiere(lignes, tex.tH, uAnneau); sceneAir.add(poussiere.mesh);
 const fx = new Coups(); sceneAir.add(fx.mesh);
-const marques = new Marques(14); sceneAir.add(marques.mesh);
+const marques = new Marques(24); sceneAir.add(marques.mesh);
 const foudre = new Foudre(); sceneAir.add(foudre.mesh);
 
 // Le point visé pendant qu'on mène, et la balise d'Arval.
@@ -141,7 +139,9 @@ for (const m of horde.membres) m.col = new THREE.Color(m.ton).convertLinearToSRG
 const hud = new Hud(), audio = new Audio();
 const carte = new Carte(monde);
 
+const TACTILE = matchMedia('(pointer: coarse)').matches;
 const j = {
+  tactile: TACTILE,
   monde, vent, horde, hud, audio, fx, navire, eclats, vivres: sauvegarde?.vivres ?? R.vivresDepart, repas: false,
   ajouterVivres(n) { j.vivres += n; hud.vivres(j.vivres); },
   eclair() {
@@ -195,7 +195,7 @@ function regarder({ x, s, y, duree = 12, recul, lat }) {
   if (etat !== 'marche' || j.camp || ev.actifs()) return false;
   visee = { x, s, y, recul, lat }; regardCible = 1; regardReste = duree; regardLibre = false;
   scene_ = true; chemin = []; cible = null; mene = false; pression = null;
-  setTimeout(() => { if (scene_) hud.aide('V : reprendre la marche', 6); }, 2600);
+  setTimeout(() => { if (scene_) hud.aide(TACTILE ? 'Touchez Reprendre pour repartir' : 'V : reprendre la marche', 6); }, 2600);
   return true;
 }
 function quitterRegard() { regardCible = 0; regardLibre = false; scene_ = false; }
@@ -203,6 +203,20 @@ function basculerRegard() {
   if (regardCible) { quitterRegard(); return; }
   if (etat !== 'marche') return;
   regardCible = 1; regardLibre = true; regardReste = Infinity;
+}
+// Les boutons du doigt disent l'état du jeu : ce qu'ils feraient là, maintenant.
+// Sous un vent léger, les rafales franchissent le seuil de l'abri : le doré attend que l'abri tienne, sans quoi il clignote.
+let cleGestes = '', tExpose = 0;
+function majGestes(abrite) {
+  if (!abrite) tExpose = temps;
+  const c = j.camp ? 'camp' : temps - tExpose > 1.5 && !ev.actifs() ? 'abri' : '';
+  const cle = `${regardCible ? 1 : 0}${chemin.length ? 1 : 0}${lireRelief ? 1 : 0}${c}`;
+  if (cle === cleGestes) return;
+  cleGestes = cle;
+  $('regarder').textContent = regardCible ? 'Reprendre' : 'Regarder';
+  $('effacer').hidden = !chemin.length;
+  $('relief').setAttribute('aria-pressed', lireRelief);
+  $('camper').className = c;
 }
 function changerAir(c) {
   const a = AIRS[c.id] || AIRS.amont;
@@ -253,7 +267,7 @@ function chercherAbri() {
     const a = i / 16 * 6.283, x = horde.x + Math.sin(a) * r, s = horde.s + Math.cos(a) * r;
     if (x < 12 || x > monde.W - 12) continue;
     monde.v(x, s, lueAbri);
-    if ((lueAbri.abri > 0.46 || Math.hypot(lueAbri.x, lueAbri.s) < 0.44) && !monde.plein(x, s, 5) && monde.h(x, s) > 0 && r < dBest) { dBest = r; best = { x, s }; }
+    if ((lueAbri.abri > 0.46 || Math.hypot(lueAbri.x, lueAbri.s) < 0.44) && !monde.bloque(x, s, 5) && monde.h(x, s) > 0 && r < dBest) { dBest = r; best = { x, s }; }
   }
   if (best) j.balise = { x: best.x, s: best.s, vie: 4 };
 }
@@ -261,7 +275,16 @@ function basculerBloc(v = !bloc) {
   bloc = v; hud.bloc(bloc); $('bloc').setAttribute('aria-pressed', bloc);
 }
 const LONG_APPUI = 220, MAX_JALONS = 24;
+// Deux doigts : on pince pour zoomer, et ni l'un ni l'autre ne compte plus comme un ordre de marche.
+const doigts = new Map();
+let pince = null;
+const ecart = () => { const [a, b] = doigts.values(); return Math.hypot(a[0] - b[0], a[1] - b[1]) || 1; };
+const zoomer = (z) => { zoomV = Math.max(0.3, Math.min(1.05, z)); };
 canvas.addEventListener('pointerdown', (e) => {
+  if (e.pointerType === 'touch') {
+    doigts.set(e.pointerId, [e.clientX, e.clientY]);
+    if (doigts.size === 2) { pince = { d: ecart(), z: zoomV }; pression = null; mene = false; return; }
+  }
   if (etat !== 'marche') return;
   if (e.button === 2) { basculerBloc(); return; }
   canvas.setPointerCapture?.(e.pointerId);
@@ -272,31 +295,46 @@ canvas.addEventListener('pointerdown', (e) => {
   souris = [e.clientX, e.clientY];
 });
 canvas.addEventListener('pointermove', (e) => {
+  if (doigts.has(e.pointerId)) doigts.set(e.pointerId, [e.clientX, e.clientY]);
+  if (pince && doigts.size === 2) { zoomer(pince.z * pince.d / ecart()); return; }
   souris = [e.clientX, e.clientY];
   // Maintenir ou glisser, c'est mener : on oublie le chemin prévu.
   if (pression && !mene && Math.hypot(e.clientX - pression.x, e.clientY - pression.y) > 9) commencerAMener();
 });
 function commencerAMener() { mene = true; chemin = []; pression = null; }
-addEventListener('pointerup', () => {
+const leverDoigt = (e) => { doigts.delete(e.pointerId); if (doigts.size < 2) pince = null; };
+addEventListener('pointerup', (e) => {
+  leverDoigt(e);
   if (pression) poserJalon(pression.p);
   pression = null; mene = false;
 });
-addEventListener('pointercancel', () => { pression = null; mene = false; });
+addEventListener('pointercancel', (e) => { leverDoigt(e); pression = null; mene = false; });
 // Un clic bref pose un point au bout du chemin ; sur un point déjà posé, il le retire.
 function poserJalon(p) {
-  const i = chemin.findIndex((q) => Math.hypot(q.x - p.x, q.s - p.s) < 5);
+  const i = chemin.findIndex((q) => Math.hypot(q.x - p.x, q.s - p.s) < (TACTILE ? 9 : 5));
   if (i >= 0) { chemin.splice(i, 1); return; }
   if (chemin.length >= MAX_JALONS) return;
   chemin.push({ x: Math.max(10, Math.min(monde.W - 10, p.x)), s: Math.max(32, Math.min(monde.L - 6, p.s)) });
-  if (chemin.length === 2 && !etapes.jalons) { etapes.jalons = true; hud.aide('Le chemin s’allonge à chaque clic. Retour efface le dernier point.', 7); }
+  if (chemin.length === 2 && !etapes.jalons) { etapes.jalons = true; hud.aide(TACTILE ? 'Le chemin s’allonge à chaque toucher. Effacer retire le dernier point ; un appui long, tout le chemin.' : 'Le chemin s’allonge à chaque clic. Retour efface le dernier point.', 7); }
 }
 canvas.addEventListener('contextmenu', (e) => e.preventDefault());
-canvas.addEventListener('wheel', (e) => { zoomV = Math.max(0.3, Math.min(1.05, zoomV * Math.exp(e.deltaY * 0.0009))); e.preventDefault(); }, { passive: false });
+canvas.addEventListener('wheel', (e) => { zoomer(zoomV * Math.exp(e.deltaY * 0.0009)); e.preventDefault(); }, { passive: false });
 $('page').addEventListener('click', () => { if (etat === 'marche') basculerMenu(); });
 $('bloc').addEventListener('click', () => basculerBloc());
 $('regarder').addEventListener('click', () => basculerRegard());
 $('temps').addEventListener('click', () => changerTemps());
 $('repos').addEventListener('click', () => camper());
+$('camper').addEventListener('click', () => camper());
+$('relief').addEventListener('click', () => { lireRelief = !lireRelief; });
+$('menu-doigt').addEventListener('click', () => { if (etat === 'marche') basculerMenu(); });
+// Effacer : un toucher retire le dernier point, un appui long tout le chemin.
+let tEffacer = 0;
+const finEffacer = () => { clearTimeout(tEffacer); tEffacer = 0; };
+$('effacer').addEventListener('pointerdown', () => { tEffacer = setTimeout(() => { tEffacer = 0; chemin = []; }, 500); });
+$('effacer').addEventListener('pointerup', () => { if (tEffacer) { finEffacer(); chemin.pop(); } });
+$('effacer').addEventListener('pointerleave', finEffacer);
+$('effacer').addEventListener('pointercancel', finEffacer);
+$('gestes').addEventListener('contextmenu', (e) => e.preventDefault());
 addEventListener('keydown', (e) => {
   if (e.repeat) return;
   touches.add(e.code);
@@ -354,7 +392,7 @@ function demarrer(reprise) {
   regardMontee = 5.2; quitterRegard(); setTimeout(() => { regardMontee = 2.4; }, 6000);
   setTimeout(() => { $('hud').classList.add('vu'); }, 1800);
   hud.signes(horde); hud.page(pageIci()); hud.vivres(j.vivres);
-  if (!reprise) setTimeout(() => hud.aide('Maintenez le clic : Golgoth marche vers le point visé.'), 3600);
+  if (!reprise) setTimeout(() => hud.aide(TACTILE ? 'Gardez le doigt posé : Golgoth marche vers le point visé.' : 'Maintenez le clic : Golgoth marche vers le point visé.'), 3600);
   else { etapes.marche = etapes.lire = true; setTimeout(() => hud.dire('sov', 'Nous repartons du dernier camp.'), 3000); }
   setTimeout(() => { $('accueil').style.display = 'none'; }, 3200);
 }
@@ -408,7 +446,7 @@ const NIVEAUX = [
 let niveau = 0, prActuel = 1;
 function appliquerNiveau(n) {
   niveau = n; const q = NIVEAUX[n];
-  herbe.niveau(q.herbe); filets.niveau(q.filets); post.volActif = q.vol; post.aoActif = q.ao;
+  herbe.niveau(q.herbe); filets.niveau(q.filets); post.volActif = q.vol; post.aoActif = q.ao; post.uF.uPas.value = n > 1 ? 24 : 40;
   taille();
 }
 function taille() {
@@ -461,12 +499,12 @@ function commande(dt) {
 }
 
 function aides() {
-  if (!etapes.marche && parcouru > 42) { etapes.marche = true; hud.aide('Clic bref : un point de passage. La poussière montre le vent, les creux calmes se cachent derrière les roches. Tenir C dessine le relief et le vent.', 11); }
-  if (etapes.marche && !etapes.souffle && horde.souffle < 0.62) { etapes.souffle = true; hud.aide('Le souffle s’épuise. Les zones dorées au sol sont à l’abri du vent : allez-y, puis R pour camper. Chaque camp mange une ration.', 11); }
+  if (!etapes.marche && parcouru > 42) { etapes.marche = true; hud.aide(TACTILE ? 'Toucher bref : un point de passage. La poussière montre le vent, les creux calmes se cachent derrière les roches. Le bouton Relief dessine le relief et le vent. À deux doigts, on zoome.' : 'Clic bref : un point de passage. La poussière montre le vent, les creux calmes se cachent derrière les roches. Tenir C dessine le relief et le vent.', 11); }
+  if (etapes.marche && !etapes.souffle && horde.souffle < 0.62) { etapes.souffle = true; hud.aide(`Le souffle s’épuise. Les zones dorées au sol sont à l’abri du vent : allez-y, puis ${TACTILE ? 'touchez Camper' : 'R pour camper'}. Chaque camp mange une ration.`, 11); }
   // On piétine face au vent sans faire bloc : le jeu le dit une fois, puis à chaque rechute.
   piétine = cmd.actif && !cmd.serre && !regardCible && horde.force > 1.2 && horde.vitesse < 2.2 ? piétine + 1 / 60 : Math.max(0, piétine - 1 / 30);
-  if (piétine > 4 && temps > prochaineAideBloc) { prochaineAideBloc = temps + 45; hud.aide('Le vent gagne. Espace ou clic droit : faites bloc pour passer.', 7); }
-  if (etapes.marche && !etapes.lire && parcouru > 240) { etapes.lire = true; hud.aide('La route est longue. T accélère le temps ; le moindre danger le ramène à la normale.', 9); }
+  if (piétine > 4 && temps > prochaineAideBloc) { prochaineAideBloc = temps + 45; hud.aide(TACTILE ? 'Le vent gagne. Touchez Faire bloc pour passer.' : 'Le vent gagne. Espace ou clic droit : faites bloc pour passer.', 7); }
+  if (etapes.marche && !etapes.lire && parcouru > 240) { etapes.lire = true; hud.aide(TACTILE ? 'La route est longue. « temps normal », en haut à droite, accélère le temps ; le moindre danger le ramène à la normale.' : 'La route est longue. T accélère le temps ; le moindre danger le ramène à la normale.', 9); }
 }
 
 function majJeu(dt) {
@@ -502,20 +540,21 @@ function poserUniformes(dt) {
   const fr = vent.front;
   u.uFrontT.value.set(fr.a, fr.b, fr.presence);
   u.uReve.value = reve * (1 - feu * 0.2);
-  // Tenir C : le relief se dessine, et le vent se voit mieux.
-  carteV = vers(carteV, lireRelief ? 1 : 0, dt, 9); u.uCarte.value = carteV;
+  // Tenir C, ou le bouton Relief : le relief se dessine, et le vent se voit mieux.
+  carteV = vers(carteV, lireRelief && !regardCible ? 1 : 0, dt, 9); u.uCarte.value = carteV;
   // Les zones de repos se montrent dès qu'on en a besoin, ou qu'on les demande.
   montrerAbris = Math.max(0, montrerAbris - dt);
   abriV = vers(abriV, etat === 'marche' && !j.camp && !scene_ && (lireRelief || horde.souffle < 0.62 || montrerAbris > 0) ? 1 : 0, dt, 3); u.uAbriV.value = abriV;
   if (etat === 'marche') {
     const ab = camp.abrite();
-    if (j.camp) hud.repos(j.repas ? 'Le camp : le souffle revient. Cliquez pour repartir.' : 'Le camp, le ventre vide : on ne récupère qu’à moitié.', 'camp');
+    if (j.camp) hud.repos(j.repas ? `Le camp : le souffle revient. ${TACTILE ? 'Touchez le sol' : 'Cliquez'} pour repartir.` : 'Le camp, le ventre vide : on ne récupère qu’à moitié.', 'camp');
     else if (scene_ || ev.actifs()) hud.repos('', '');
-    else if (ab && horde.souffle < 0.98) hud.repos('À l’abri du vent. R pour camper', 'abri');
+    else if (ab && horde.souffle < 0.98) hud.repos(TACTILE ? 'À l’abri du vent : touchez Camper' : 'À l’abri du vent. R pour camper', 'abri');
     else if (!ab && horde.souffle < 0.8) hud.repos('Exposés au vent : pas de repos ici', 'expose');
     else hud.repos('', '');
     // À bout de souffle, Arval montre le chemin.
     if ((tAbri -= dt) < 0 && horde.souffle < 0.4 && !ab && !ev.actifs() && !j.balise) { tAbri = 2; chercherAbri(); }
+    if (TACTILE) majGestes(ab);
   } else hud.repos('', '');
   u.uFeu.value.set(horde.x, horde.s, feu);
   const n = vent.navire;
@@ -526,7 +565,7 @@ function poserUniformes(dt) {
   u.uSv.value = horde.s / monde.L;
   u.uRemousT.value = lignes.commun.uRemous.value;
 
-  const m = vent.masque(horde.s) * fr.presence;
+  const m = vent.masque(horde.s, horde.x) * fr.presence;
   hud.sombre(m > 0.5 || nuit > 0.62);
   figures.u.uCharge.value = Math.max(m, nuit * 0.5);
   assaillants.u.uCharge.value = 0.5;
@@ -545,7 +584,7 @@ function poserUniformes(dt) {
   ev.ennemis.forEach((e, i) => { if (i < 14) Object.assign(visuE[i], e, { accent: 0, long: 0.9, col: COUL_ENNEMI }); });
   assaillants.poser(visuE.slice(0, ev.ennemis.length));
   assaillants.groupe.visible = ev.ennemis.length > 0;
-  marques.poser(ev.ennemis, temps);
+  marques.poser(aMarquer(), temps);
   fleches();
 
   poussiere.u.tPos.value = lignes.gpu.getCurrentRenderTarget(lignes.varPos).texture;
@@ -584,14 +623,22 @@ function climat(dt, m) {
   post.u.uExpo.value = CL.expo * mix(1, 1.9, m) * mix(1, 1.5, nuit);
 }
 
+// Le Corroyeur et les chrones n'ont pas de corps à viser : c'est leur cercle au sol qui se lit.
+function aMarquer() {
+  const l = ev.ennemis.slice(0, 14), sol = (x, s) => Math.max(0, monde.h(x, s));
+  if (ev.corroyeur) { const c = ev.corroyeur; l.push({ x: c.x, y: sol(c.x, c.s), s: c.s, r: R.porteeCorroyeur, k: 1 }); }
+  for (const c of ev.chrones) if (l.length < 24 && c.k !== 'vera') l.push({ x: c.x, y: sol(c.x, c.s), s: c.s, r: c.r * 0.72, k: 2 });
+  return l;
+}
+
 // Ce qui arrive hors de l'image est signalé au bord de l'écran.
-const FLECHES = Array.from({ length: 14 }, () => { const e = document.createElement('i'); $('fleches').append(e); return e; });
+const FLECHES = Array.from({ length: 15 }, () => { const e = document.createElement('i'); $('fleches').append(e); return e; });
 const vE = new THREE.Vector3();
 function fleches() {
   FLECHES.forEach((q, i) => {
-    const e = ev.ennemis[i];
+    const e = i < 14 ? ev.ennemis[i] : ev.corroyeur;
     if (!e) { q.style.display = 'none'; return; }
-    vE.set(e.x, e.y + 1, -e.s).project(camera);
+    vE.set(e.x, (e.y ?? camH) + 1, -e.s).project(camera);
     let x = vE.x, y = vE.y; if (vE.z > 1) { x = -x; y = -y; }
     if (Math.abs(x) < 0.97 && Math.abs(y) < 0.95 && vE.z <= 1) { q.style.display = 'none'; return; }
     const k = 0.93 / Math.max(Math.abs(x), Math.abs(y), 1e-3);
@@ -605,7 +652,7 @@ function lisseR() { return regard * regard * (3 - 2 * regard); }
 function cadrer(dt) {
   zoom = vers(zoom, zoomV * (j.camp ? 0.74 : 1) * (1 + j.intensite * 0.1), dt, 1.1);
   // Assaillants en vue : la caméra monte et remet la Horde au milieu de l'image, pour qu'on voie ce qui vient de derrière.
-  alerteV = vers(alerteV, ev.ennemis.length ? 1 : 0, dt, 2.2);
+  alerteV = vers(alerteV, ev.ennemis.length || ev.corroyeur ? 1 : 0, dt, 2.2);
   const av = mix(46, 8, nuit) * zoom * (1 - alerteV);
   camX = vers(camX, horde.x, dt, 2.2); camS = vers(camS, horde.s + av, dt, 2.2);
   camH = vers(camH, Math.max(0, monde.h(horde.x, horde.s)), dt, 1.4);
@@ -690,7 +737,7 @@ function boucle(now) {
   if (etat === 'fin' && !marcheFinale && !feuFinal) blanc = Math.min(1, blanc + dt / 3.4);
   post.u.uBlanc.value = blanc;
 
-  const m = vent.masque(horde.s) * vent.front.presence;
+  const m = vent.masque(horde.s, horde.x) * vent.front.presence;
   const eclat = calme ? 0 : Math.max(0, m - 0.5) * 2 * Math.min(1, Math.max(0, horde.force - 1.6));
   post.u.uFlou.value = eclat;
   post.u.uGrain.value = mix(0.016, 0.034, m);
@@ -710,8 +757,10 @@ function boucle(now) {
   semis.maj(horde.x, horde.s + 40);
   poserUniformes(dt);
   lignes.uSim.uVitesse.value = 26;
+  lignes.uSim.uEtale.value = vers(lignes.uSim.uEtale.value, m > 0.02 ? 1 : 0, dt, 1.4);
   lignes.maj(dt, temps, horde.x, horde.s + 150, horde.x, horde.s);
   filets.maj(dt, innerWidth, innerHeight, prActuel);
+  filets.u.uFrontF.value.set(vent.front.a, vent.front.presence > 0 ? Math.max(0, Math.min(1, (vent.front.a + camera.position.z + 60) / 200)) : 0);
   filets.u.uChaud.value = m; filets.u.uNuit.value = nuit; filets.u.uForceF.value = (1 - reve) * (1 - lisseR() * 0.72) * (1 + carteV * 1.8);
   fx.maj(dt); foudre.maj(dt);
   const centre = cadrer(dt);
@@ -725,13 +774,12 @@ function boucle(now) {
   oiseaux.maj(dt, temps, horde.x, horde.s, camH, (horde.vit('tourse') ? 1 : 0) + (horde.vit('darbon') ? 1 : 0));
   oiseaux.u.uNuit.value = nuit;
 
-  const eR = lisseR(), mTemp = vent.masque(horde.s) * vent.front.presence;
+  const eR = lisseR(), mTemp = vent.masque(horde.s, horde.x) * vent.front.presence;
   herbe.maj(mix(camX, centre.x - vF.x * 40, eR), mix(camS + 40, -(camera.position.z + vF.z * 110), eR), horde.x, horde.s, vent.respir, monde.contreeA(horde.s).herbe > 0 || monde.contreeA(horde.s + 200).herbe > 0 || monde.contreeA(horde.s - 120).herbe > 0, eR);
   rafales.u.uCouleur.value.setRGB(clair.r, clair.g * mix(1, 0.72, mTemp), clair.b * mix(1, 0.46, mTemp));
   rafales.maj(dt, camX, camS + 90, camH, horde.force, 0.7 + Math.min(1.6, horde.force) + mTemp * 2 + vent.rafale * 6);
   rafales.mesh.visible = nuit < 0.5 && reve < 0.5;
   tornades.maj(temps, ev.colonne ? [...ev.chrones.slice(0, 3), ev.colonne] : ev.chrones);
-  front.maj(vent.front.a, vent.front.presence > 0 && vent.front.a < horde.s + 1400);
   eclair *= Math.exp(-dt * 8);
   if (eclair < 0.01) eclair = 0;
   terrain.u.uEclair.value = eclair; post.u.uEclair.value = eclair;
@@ -761,7 +809,7 @@ function boucle(now) {
   document.body.classList.toggle('regard', regard > 0.35);
 
   post.rendre(scene, sceneAir, camera, {
-    solY: camH, ventX: horde.w.x, ventS: horde.w.s, couv: CL.voile * 0.8 + 0.42, teinteAir: CL.teinte, vol: 1 + m * 3,
+    solY: camH, ventX: horde.w.x, ventS: horde.w.s, couv: CL.voile * 0.8 + 0.42, teinteAir: CL.teinte, vol: 1 + m * 3, front: vent.front.presence > 0,
   });
   titre.rendre(temps, dt);
 
@@ -774,7 +822,7 @@ function boucle(now) {
     const px = (vP.x + 1) / 2 * innerWidth + 74, py = (1 - vP.y) / 2 * innerHeight - 26;
     hud.roue(horde.souffle, px, py, horde.souffle < 0.985);
   } else if (etat === 'fin') hud.roue(1, 0, 0, false);
-  audio.maj(brut, { force: horde.force, tempete: j.intensite, combat: j.combat, camp: feu, silence: reve, abri: horde.abri, relief: monde.contreeA(horde.s).relief, avance: horde.s / monde.L, vitesse: horde.vitesse });
+  audio.maj(brut, { force: horde.force, tempete: j.intensite, combat: j.combat, camp: feu, silence: reve, abri: horde.abri, relief: monde.contreeA(horde.s).relief, avance: horde.s / monde.L, approche: vent.front.presence > 0 ? Math.max(0, 1 - Math.max(0, vent.front.a - horde.s) / 1500) : 0 });
 }
 
 // --- Démarrage ---

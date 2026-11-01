@@ -191,7 +191,7 @@ void main() {
   float nuage = smoothstep(0.62 - uCouv * 0.24, 0.72 - uCouv * 0.24, texture2D(tNC, pn * 0.000024).r);
   float vis = lr.r * porte * (1.0 - 0.72 * nuage);
 
-  float t = tempeteA(vW.z);
+  float t = tempeteA(vW.x, vW.z);
   vec3 V = normalize(cameraPosition - P);
   float ndl = max(dot(n, uSoleil), 0.0);
   vec3 sun = uSoleilCol * vis * (1.0 - 0.96 * t);
@@ -266,10 +266,8 @@ void main() {
 
   // Le furvent : le jour s'en va, et le champ dense s'allume comme du cuivre.
   float dense = 1.0 - exp(-tr.r * 0.55), aigu = clamp(tr.b / max(tr.r, 0.001) * 0.5, 0.0, 1.0), brul = dense * dense;
-  col += mix(vec3(0.66, 0.36, 0.17), vec3(1.0, 0.8, 0.56), aigu * brul) * brul * cadre.x * cadre.y * t * 1.6;
+  col += mix(vec3(0.66, 0.36, 0.17), vec3(1.0, 0.8, 0.56), aigu * brul) * brul * smoothstep(0.5, 0.26, length(tu - 0.5)) * t * 1.6;
   col += vec3(0.5, 0.54, 0.68) * uEclair * t * 1.4 * (0.4 + alb);
-  float levre = exp(-pow((vW.z - uFrontT.x) / 18.0, 2.0)) * uFrontT.z;
-  col = mix(col, vec3(1.7, 1.25, 0.86) * (sun + amb) * 0.5, levre * 0.62 * (0.4 + 0.6 * bruit(vW.xz * vec2(0.04, 0.12) + uTemps * 0.6)));
 
   // Le feu du camp.
   if (uFeu.z > 0.0) {

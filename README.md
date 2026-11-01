@@ -11,6 +11,8 @@ npm run dev        # http://localhost:4380
 npm run build      # le site statique, dans dist/
 ```
 
+Chaque push sur `main` publie le site sur https://augustin-bresset.github.io/contrevent/.
+
 L'adresse accepte `?graine=34` pour rejouer un monde, et `?debug` pour exposer `window.__j`.
 
 ## Jouer
@@ -25,9 +27,21 @@ L'adresse accepte `?graine=34` pour rejouer un monde, et `?debug` pour exposer `
 | C, tenu | Lit le pays : le relief se dessine en courbes de niveau, et le vent ressort |
 | Molette | Rapproche la caméra du sol, ou l'élève pour lire le chemin |
 | V | Regarder à hauteur de Horde, ou revenir au-dessus. En arrivant dans un lieu, la caméra y descend seule : le jeu s'arrête, le chemin est oublié, personne ne se fatigue et rien n'attaque. V reprend la marche |
-| Cliquer sur un assaillant | Erg frappe. Le Corroyeur est invisible : il faut cliquer là où les lignes se tordent |
+| Cliquer sur un assaillant | Erg frappe. Le Corroyeur se frappe dans son cercle blanc, cinq coups en tout ; les chrones ne se frappent pas, ils se contournent |
 | R, ou le message en bas de l'écran | Camper, si l'endroit est à l'abri. Les zones dorées au sol sont celles où le vent ne porte pas : elles s'affichent quand le souffle baisse, ou en tenant C. S'y arrêter fatigué suffit aussi : la nuit tombe, le souffle revient, la partie s'enregistre |
 | M, Échap, ou le numéro de page | La bande du monde, le fil rouge, le son |
+
+Au doigt, les boutons à droite de l'écran remplacent le clavier :
+
+| Geste | Effet |
+|---|---|
+| Toucher bref, doigt posé | Comme le clic bref et le clic maintenu. Toucher un assaillant le frappe |
+| Pincer à deux doigts | Zoome |
+| Faire bloc, Camper | Comme Espace et R. Camper s'allume en doré à l'abri ; ailleurs, il montre l'abri le plus proche |
+| Regarder, puis Reprendre | Comme V |
+| Relief | Comme C, mais une bascule : un doigt reste libre pour viser |
+| Effacer | Retire le dernier point. Un appui long retire tout le chemin. Il n'apparaît que s'il y a un chemin |
+| « temps normal », « menu » en haut à droite | Comme T et M |
 
 Espace est une bascule parce que Linux coupe souvent le pavé tactile tant qu'une touche est enfoncée :
 tenir une touche empêcherait de viser.
@@ -55,7 +69,7 @@ Les lignes à l'écran sont ces mêmes données : elles sont l'information de je
 
 **Un pays, pas une carte.** La caméra voit l'horizon : la Horde marche en bas de l'image, et le monde se perd dans l'air.
 Le dessin de carte d'origine n'a pas disparu : tenir C fait revenir les courbes de niveau, et le vent ressort.
-Dans le furvent, un mur de sable de plusieurs centaines d'unités descend la bande et prend le jour.
+Le furvent s'annonce de loin : un mur de sable en volume, sans bords, plus large que tout ce qu'on peut voir, surgit à l'horizon, prend le soleil de côté et avale le jour.
 
 **Le fil rouge.** Golgoth est le traceur : la Horde laisse un fil qui ne s'efface pas. La fin le montre, sur toute la bande.
 
@@ -79,7 +93,7 @@ moins grande qu'une image privée de ses ombres. On ne renonce aux effets qu'en 
 **Une contrée, une couleur.** Glace d'Aberlaas, vert de Port-Choon, jade de la Flaque, sable de Leergeem,
 rose d'Alticcio, malachite, mauve d'Égine, ocre du Scóverr, bleu de Norska, cendre de Krafla, blanc de l'Extrême-Amont.
 
-Une seule famille, Spectral (Production Type, licence OFL). Le son est entièrement synthétisé.
+Une seule famille, Spectral (Production Type, licence OFL). Le vent est enregistré (voir plus bas), le reste du son est synthétisé.
 
 ## Ce qui vient des inspirations
 
@@ -99,6 +113,7 @@ Une seule famille, Spectral (Production Type, licence OFL). Le son est entièrem
 src/monde/       graine → esquisse, puis relief, vent et lumière par tranches, dans un worker
 src/rendu/       atmosphère, sol, matières, ombres, filets, herbe, souffle, semis, figures, monuments, Physalis, mur du furvent, foudre, chaîne d'image
 src/jeu/         la Horde, le vent instantané, les événements, les textes
+src/sons/        le vent enregistré, en boucles
 src/hud.js       interface  ·  src/carte.js  la bande  ·  src/audio.js  le son  ·  src/main.js  la boucle
 ```
 
@@ -120,6 +135,12 @@ La route est tirée par graine et garantit un passage. Les contrées, les lieux 
 du roman ; leurs positions, le relief, les abris et les chrones errants changent.
 
 ## Matières
+
+Le vent vient d'enregistrements en CC0, préparés par `outils/vent.py` à partir de leurs extraits en écoute de Freesound : le désert
+d'Atacama ([146914](https://freesound.org/s/146914/)), une plaine d'Anatolie ([167684](https://freesound.org/s/167684/)), le désert
+([711105](https://freesound.org/s/711105/)), un panneau qui chante ([349186](https://freesound.org/s/349186/)) et un barbelé
+([147777](https://freesound.org/s/147777/)), tous de Felix Blume ; des dunes par Kinoton ([393567](https://freesound.org/s/393567/)) et
+une église vide ([557380](https://freesound.org/s/557380/)).
 
 Les textures et les rochers viennent de [Poly Haven](https://polyhaven.com), sous licence CC0. Rien de tout cela n'est versionné
 sous sa forme brute : `src/rendu/matieres/` contient le résultat, déjà aplani et empaqueté (3 Mo de WebP).

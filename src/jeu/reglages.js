@@ -28,6 +28,7 @@ export const R = {
   alerte: 8,             // secondes d'avance avec Oroshi
   frontVitesse: 62,
   frontDepart: 520,
+  frontElan: 0.25,       // au-delà de frontDepart, le mur va d'autant plus vite qu'il est loin
   ravageBloc: 9, ravageBlocFin: 5,   // à découvert, un hordier arraché toutes les tant de secondes, en bloc...
   ravageLibre: 1.2,      // ... et sans bloc
   // Écart entre deux furvents, en part de la bande : au départ, puis au bout du monde
@@ -41,6 +42,7 @@ export const R = {
   paradeErg: 4,          // Erg ne pare seul qu'une fois toutes les 4 secondes
   lame: 0.5,             // une frappe au clic toutes les demi-secondes
   porteeClic: 8,
+  porteeCorroyeur: 22,  // rayon du cercle blanc où le clic le touche
   embuscade: 0.08, embuscadeFin: 0.13,   // chance qu'un camp soit attaqué, au départ et au bout du monde
   // Chrones
   chasseChrone: 2.6, oeilChrone: 2, repuChrone: 2,   // plus lents que la marche, et rassasiés au bout de deux

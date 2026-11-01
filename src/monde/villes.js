@@ -2,28 +2,28 @@
 // un mur arrête le vent, abrite ce qui est derrière lui, et ne se traverse pas. Rien ici ne dépend du navigateur.
 import { HORDIERS } from '../jeu/hordiers.js';
 
-// h : hauteur ; e : ce qui occupe le sol, en cercles [x, z, rayon], à l'échelle 1.
+// h : hauteur ; e : ce qui occupe le sol, en cercles [x, z, rayon], à l'échelle 1. Relevés sur les maillages, au ras du sol.
 export const PIECES = {
-  fleche: { h: 172, e: [[0, 0, 15]] },
-  helice: { h: 190, e: [[0, 0, 24]] },
-  tourelle: { h: 96, e: [[0, 0, 12]] },
-  minaret: { h: 92, e: [[0, 0, 7]] },
-  maison: { h: 24, e: [[-9, 0, 11], [9, 0, 11]] },
-  maison2: { h: 40, e: [[0, 0, 15]] },
-  dome: { h: 44, e: [[0, 0, 18]] },
-  moulin: { h: 62, e: [[0, 0, 9]] },
-  mur: { h: 18, e: [[-28, 0, 5], [-14, 0, 5], [0, 0, 5], [14, 0, 5], [28, 0, 5]] },
-  portique: { h: 118, e: [[-52, 0, 19], [52, 0, 19]] },
-  colosse: { h: 112, e: [[0, 0, 19]] },
-  stele: { h: 20, e: [[0, 0, 3.2]] },
-  tente: { h: 20, e: [[0, 0, 10]] },
-  glaceA: { h: 120, e: [[0, 0, 26]] },
-  glaceB: { h: 70, e: [[0, 0, 12]] },
-  glaceC: { h: 34, e: [[0, 0, 15]] },
+  fleche: { h: 172, e: [[0, 0, 26]] },
+  helice: { h: 190, e: [[0, 0, 32]] },
+  tourelle: { h: 96, e: [[0, 0, 16.5]] },
+  minaret: { h: 92, e: [[0, 0, 10]] },
+  maison: { h: 24, e: [[-15, 12.4, 13], [20.5, -11.7, 12], [-20, -12, 13], [19.4, 11.7, 13], [0.5, -14.6, 10.5], [-6, 12.4, 13]] },
+  maison2: { h: 40, e: [[0, 0, 18.5]] },
+  dome: { h: 44, e: [[0.7, 0, 21]] },
+  moulin: { h: 62, e: [[0, 2.7, 15]] },
+  mur: { h: 18, e: [[-27.5, 0, 9.5], [-14, 0, 9.5], [0, 0.5, 9.3], [13.8, 0.5, 9.5], [27.5, 0, 9.5]] },
+  portique: { h: 118, e: [[-53, 0, 29], [53, 0, 29]] },
+  colosse: { h: 112, e: [[1, 0, 27]] },
+  stele: { h: 20, e: [[0, 0, 4.4]] },
+  tente: { h: 20, e: [[0, 3.2, 15]] },
+  glaceA: { h: 120, e: [[26.4, -6.5, 15], [-14.4, 13.4, 16], [8.4, -13.4, 14], [-8.9, -12.7, 15], [-25.8, -3.3, 12.5], [11.5, 15.5, 16]] },
+  glaceB: { h: 70, e: [[0.3, 9, 8], [-8.3, 5.2, 8], [0.2, -5.8, 7.7], [10.4, 4.5, 8]] },
+  glaceC: { h: 34, e: [[16.4, 4.3, 7.6], [-10.1, 5.8, 8.9], [7, 4.6, 8.9], [3.6, -14.7, 7], [-1.4, -8.3, 8.9]] },
   volcan: { h: 0, e: [] },
 };
 
-const ROUTE_LIBRE = 20;
+const ROUTE_LIBRE = 12;
 
 export function composer(l, r, xRoute) {
   const o = [];

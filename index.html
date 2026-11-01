@@ -11,16 +11,23 @@
 <canvas id="gl" aria-label="La carte du monde, vue du ciel. La Horde remonte le vent vers le haut de l'écran."></canvas>
 
 <div id="hud">
-  <div id="repere"><div id="page" title="Pages restantes, comme le roman qui compte à rebours"></div><div id="forme"></div><div id="vivres"></div><div id="etat-bloc">en bloc</div><button id="temps" type="button" title="Accélérer le temps (T)">temps normal</button></div>
+  <div id="repere"><div id="page" title="Pages restantes, comme le roman qui compte à rebours"></div><div id="forme"></div><div id="vivres"></div><div id="etat-bloc">en bloc</div><button id="temps" type="button" title="Accélérer le temps (T)">temps normal</button><button id="menu-doigt" type="button">menu</button></div>
   <section id="banniere" aria-live="polite"><h2></h2><p></p></section>
-  <div id="journal" aria-live="polite"></div>
-  <p id="aide"></p>
-  <button id="repos" type="button" hidden></button>
+  <div id="bas">
+    <div id="journal" aria-live="polite"></div>
+    <p id="aide"></p>
+    <button id="repos" type="button" hidden></button>
+  </div>
   <div id="fleches" aria-hidden="true"></div>
   <svg id="roue" viewBox="0 0 56 56" aria-hidden="true"><circle id="roue-fond" cx="28" cy="28" r="22"/><circle id="roue-arc" cx="28" cy="28" r="22"/></svg>
   <ul id="signes" aria-label="La Horde"></ul>
-  <button id="regarder" type="button">Regarder</button>
-  <button id="bloc" type="button" aria-pressed="false">Faire bloc</button>
+  <div id="gestes">
+    <button id="effacer" type="button" hidden>Effacer</button>
+    <button id="relief" type="button" aria-pressed="false">Relief</button>
+    <button id="regarder" type="button">Regarder</button>
+    <button id="camper" type="button">Camper</button>
+    <button id="bloc" type="button" aria-pressed="false">Faire bloc</button>
+  </div>
 </div>
 
 <div id="accueil">
