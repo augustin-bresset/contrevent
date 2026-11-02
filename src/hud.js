@@ -79,7 +79,8 @@ export class Hud {
     if (cle === this.cleTemps) return;
     this.cleTemps = cle;
     const e = document.getElementById('temps');
-    e.textContent = a === 1 ? 'temps normal' : reel === 1 ? `×${a} suspendu` : `temps ×${a}`;
+    // On lit la vitesse du jeu, comme sur un compteur. Au moindre danger, elle retombe, et dit à combien elle reprendra.
+    e.textContent = a === 1 ? 'vitesse ×1' : reel === 1 ? `vitesse ×1, ×${a} au calme` : `vitesse ×${a}`;
     e.classList.toggle('actif', a > 1);
   }
 

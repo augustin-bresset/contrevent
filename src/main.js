@@ -38,7 +38,7 @@ import { Evenements } from './jeu/evenements.js';
 import { Camp } from './jeu/camp.js';
 import { Detour } from './jeu/detour.js';
 import { R } from './jeu/reglages.js';
-import { Audio } from './audio.js';
+import { Audio, CANAUX } from './audio.js';
 import { Hud } from './hud.js';
 import { Carte } from './carte.js';
 import FabriqueWorker from './monde/fabrique.worker.js?worker&inline';
@@ -362,7 +362,9 @@ addEventListener('keydown', (e) => {
   if (e.code === 'Backspace' && etat === 'marche') chemin.pop();
   if (e.code === 'Delete' && etat === 'marche') chemin = [];
   if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code) && e.target === document.body) e.preventDefault();
-  if ((e.code === 'KeyM' || e.code === 'Tab') && (etat === 'marche' || etat === 'pause')) { e.preventDefault(); basculerMenu(); }
+  // Dans les réglages du son, Tab passe d'un réglet à l'autre.
+  const reglant = $('menu-choix').classList.contains('son') && etat === 'pause';
+  if ((e.code === 'KeyM' || (e.code === 'Tab' && !reglant)) && (etat === 'marche' || etat === 'pause')) { e.preventDefault(); basculerMenu(); }
   if (e.code === 'Escape' && (etat === 'marche' || etat === 'pause')) basculerMenu();
 });
 addEventListener('keyup', (e) => { touches.delete(e.code); if (e.code === 'KeyC') lireRelief = false; });
@@ -372,22 +374,44 @@ addEventListener('blur', () => { touches.clear(); mene = false; });
 function bouton(txt, fn) { const b = document.createElement('button'); b.type = 'button'; b.textContent = txt; b.onclick = fn; return b; }
 function basculerMenu() {
   const m = $('menu');
-  if (etat === 'pause') { etat = 'marche'; m.classList.remove('vu'); audio.suspendre(false); return; }
+  if (etat === 'pause') { etat = 'marche'; m.classList.remove('vu'); audio.ecoute = false; audio.suspendre(false); return; }
   etat = 'pause'; audio.suspendre(true);
   $('menu-titre').textContent = 'La bande du monde';
   const n = horde.vivants().length;
   $('menu-note').textContent = `${n} ${n > 1 ? 'marchent encore' : 'marche encore'}. Il reste ${hud.pageAff} pages.`;
-  const c = $('menu-choix'); c.replaceChildren(
+  menuPrincipal();
+  carte.dessiner(fil, horde.x, horde.s, chemin);
+  m.classList.add('vu');
+}
+function menuPrincipal() {
+  const c = $('menu-choix'); c.className = 'choix';
+  c.replaceChildren(
     bouton('Reprendre la marche', basculerMenu),
-    bouton(audio.muet ? 'Rétablir le son' : 'Couper le son', (e) => { audio.couper(!audio.muet); e.target.textContent = audio.muet ? 'Rétablir le son' : 'Couper le son'; }),
+    bouton('Son', menuSon),
     bouton('Nouvelle Horde', (e) => {
       if (e.target.dataset.sure) nouvelleHorde();
       else { e.target.dataset.sure = 1; e.target.textContent = 'Abandonner cette Horde ?'; }
     }),
   );
-  carte.dessiner(fil, horde.x, horde.s, chemin);
-  m.classList.add('vu');
   c.firstChild.focus();
+}
+// Le son, canal par canal. Le jeu reste figé, mais le son revient : on entend ce qu'on règle.
+function menuSon() {
+  audio.ecouter(true);
+  const c = $('menu-choix'); c.className = 'choix son';
+  const lignes = CANAUX.map(([k, nom]) => {
+    const l = document.createElement('label'), v = document.createElement('output'), r = document.createElement('input');
+    r.type = 'range'; r.min = 0; r.max = 100; r.step = 5; r.value = Math.round(audio.vol[k] * 100);
+    const lire = () => { v.textContent = `${r.value} %`; };
+    r.oninput = () => { audio.volume(k, r.value / 100); lire(); };
+    lire(); l.append(nom, r, v);
+    return l;
+  });
+  const muet = bouton(audio.muet ? 'Rétablir le son' : 'Couper le son', () => { audio.couper(!audio.muet); muet.textContent = audio.muet ? 'Rétablir le son' : 'Couper le son'; });
+  const actions = document.createElement('div'); actions.className = 'actions';
+  actions.append(muet, bouton('Retour', () => { audio.ecouter(false); menuPrincipal(); }));
+  c.replaceChildren(...lignes, actions);
+  lignes[0].querySelector('input').focus();
 }
 // Sur la bande aussi, un clic pose un point : on voit tout, on peut tout prévoir.
 $('bande').addEventListener('click', (e) => {
@@ -529,7 +553,7 @@ function aides() {
   // On piétine face au vent sans faire bloc : le jeu le dit une fois, puis à chaque rechute.
   piétine = cmd.actif && !cmd.serre && !regardCible && horde.force > 1.2 && horde.vitesse < 2.2 ? piétine + 1 / 60 : Math.max(0, piétine - 1 / 30);
   if (piétine > 4 && temps > prochaineAideBloc) { prochaineAideBloc = temps + 45; hud.aide(TACTILE ? 'Le vent gagne. Touchez Faire bloc pour passer.' : 'Le vent gagne. Espace ou clic droit : faites bloc pour passer.', 7); }
-  if (etapes.marche && !etapes.lire && parcouru > 240) { etapes.lire = true; hud.aide(TACTILE ? 'La route est longue. « temps normal », en haut à droite, accélère le temps ; le moindre danger le ramène à la normale.' : 'La route est longue. T accélère le temps ; le moindre danger le ramène à la normale.', 9); }
+  if (etapes.marche && !etapes.lire && parcouru > 240) { etapes.lire = true; hud.aide(TACTILE ? 'La route est longue. « vitesse ×1 », en haut à droite, accélère le temps ; le moindre danger le ramène à la normale.' : 'La route est longue. T accélère le temps ; le moindre danger le ramène à la normale.', 9); }
 }
 
 function majJeu(dt) {

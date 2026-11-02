@@ -33,13 +33,13 @@ contrée, des matières mates, des couleurs accordées à la palette du pays et 
 | Maintenir le clic | Golgoth marche vers le point visé, et le chemin prévu est oublié. ZQSD, WASD et les flèches marchent aussi |
 | Retour, Suppr | Efface le dernier point, ou tout le chemin |
 | Espace, ou clic droit | Fait bloc ou desserre : une bascule, pas une touche à tenir. La Horde est plus lente, mais elle tient dans le vent |
-| T, ou « temps normal » en haut à droite | Accélère le temps : ×2, ×4, ×8, ×16. Le moindre danger le ramène à la normale |
+| T, ou « vitesse ×1 » en haut à droite | Accélère le temps : ×2, ×4, ×8, ×16, puis retour à ×1. Le moindre danger le ramène à ×1, le temps qu'il passe |
 | C, tenu | Lit le pays : le relief se dessine en courbes de niveau, et le vent ressort |
 | Molette | Rapproche la caméra du sol, ou l'élève pour lire le chemin |
 | V | Regarder à hauteur de Horde, ou revenir au-dessus. En arrivant dans un lieu, la caméra y descend seule : le jeu s'arrête, le chemin est oublié, personne ne se fatigue et rien n'attaque. V reprend la marche |
 | Cliquer sur un assaillant | Erg frappe. Le Corroyeur se frappe dans son cercle blanc, cinq coups en tout ; les chrones ne se frappent pas, ils se contournent |
 | R, ou le message en bas de l'écran | Camper, si l'endroit est à l'abri. Les zones dorées au sol sont celles où le vent ne porte pas : elles s'affichent quand le souffle baisse, ou en tenant C. S'y arrêter fatigué suffit aussi : la nuit tombe, le souffle revient, la partie s'enregistre |
-| M, Échap, ou le numéro de page | La bande du monde, le fil rouge, le son |
+| M, Échap, ou le numéro de page | La bande du monde, le fil rouge, et le son : général, vent, musique et effets, réglés à part et gardés d'une partie à l'autre |
 
 Au doigt, les boutons à droite de l'écran remplacent le clavier :
 

@@ -8,6 +8,10 @@ const GAMMES = [[0, 2, 7, 9, 12, 14, 19], [0, 3, 7, 10, 12, 15, 19], [0, 2, 5, 7
 const hasard = (a, b) => a + Math.random() * (b - a);
 const lisse = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 const VOLUME = 2;       // le niveau du vent à pleine force
+const NIVEAU = 1.5;     // le gain du maître, son réglé à fond
+const CLE_SON = 'contrevent-son';
+// Ce que le joueur règle : le tout, et trois familles de sons. De 0 à 1 ; l'oreille entend le carré.
+export const CANAUX = [['general', 'Général'], ['vent', 'Vent'], ['musique', 'Musique'], ['effets', 'Effets']];
 
 // Ce que chaque sol fait au vent : son grave, son chant dans les obstacles, le sable qu'il porte, et le bruit qui lui est propre.
 const LIEUX = {
@@ -25,14 +29,33 @@ const LIEUX = {
 };
 
 export class Audio {
-  constructor() { this.ok = false; this.muet = false; this.pause = false; }
+  constructor() {
+    this.ok = false; this.pause = false; this.ecoute = false;
+    let lu = {};
+    try { lu = JSON.parse(localStorage.getItem(CLE_SON)) || {}; } catch { /* réglages par défaut */ }
+    this.vol = Object.fromEntries(CANAUX.map(([k]) => [k, typeof lu[k] === 'number' ? Math.max(0, Math.min(1, lu[k])) : 1]));
+    this.muet = !!lu.muet;
+  }
+  niveau() { return this.muet || (this.pause && !this.ecoute) ? 0 : NIVEAU * this.vol.general ** 2; }
+  // Un canal réglé : il s'entend tout de suite, et le jeu s'en souvient.
+  volume(k, v) {
+    this.vol[k] = Math.max(0, Math.min(1, v));
+    this.appliquer(0.08);
+    try { localStorage.setItem(CLE_SON, JSON.stringify({ ...this.vol, muet: this.muet })); } catch { /* tant pis */ }
+  }
+  appliquer(t = 0.1) {
+    if (!this.ok) return;
+    this.regler(this.maitre.gain, this.niveau(), t);
+    for (const [k, g] of [['vent', this.gVent], ['musique', this.gMus], ['effets', this.gFx]]) this.regler(g.gain, this.vol[k] ** 2, t);
+    this.regler(this.revVent.gain, this.vol.vent ** 2, t); this.regler(this.revMus.gain, this.vol.musique ** 2, t); this.regler(this.revFx.gain, this.vol.effets ** 2, t);
+  }
 
   demarrer() {
     if (this.ok) return;
     const C = window.AudioContext || window.webkitAudioContext;
     if (!C) return;
     const c = (this.c = new C()); this.ok = true;
-    this.maitre = c.createGain(); this.maitre.gain.value = this.muet ? 0 : 1.5;
+    this.maitre = c.createGain(); this.maitre.gain.value = this.niveau();
     const lim = c.createDynamicsCompressor(); lim.threshold.value = -9; lim.ratio.value = 14; lim.knee.value = 6; lim.attack.value = 0.002; lim.release.value = 0.16;
     const borne = c.createGain(); borne.gain.value = 0.85;
     this.maitre.connect(lim); lim.connect(borne); borne.connect(c.destination); this.sortie = borne;
@@ -45,12 +68,16 @@ export class Audio {
     }
     this.rev = c.createConvolver(); this.rev.buffer = ir;
     const gr = c.createGain(); gr.gain.value = 0.9; this.rev.connect(gr); gr.connect(this.maitre);
+    // Trois familles, chacune avec son volume et son envoi vers la réverbération.
+    const canal = () => { const g = c.createGain(); g.connect(this.maitre); return g; }, envoiRev = () => { const g = c.createGain(); g.connect(this.rev); return g; };
+    this.gVent = canal(); this.gMus = canal(); this.gFx = canal();
+    this.revVent = envoiRev(); this.revMus = envoiRev(); this.revFx = envoiRev();
 
     // L'écho des parois, qu'on n'ouvre que dans les canyons et les massifs.
     this.gEcho = c.createGain(); this.gEcho.gain.value = 0;
     const de = c.createDelay(1.5), fe = c.createGain(), le = c.createBiquadFilter();
     de.delayTime.value = 0.46; fe.gain.value = 0.42; le.type = 'lowpass'; le.frequency.value = 1400;
-    this.gEcho.connect(de); de.connect(le); le.connect(fe); fe.connect(de); le.connect(this.maitre);
+    this.gEcho.connect(de); de.connect(le); le.connect(fe); fe.connect(de); le.connect(this.gVent);
 
     // Trois couleurs de bruit : blanc, rose, brun.
     const tampon = (f) => { const b = c.createBuffer(1, c.sampleRate * 8, c.sampleRate), a = b.getChannelData(0); f(a); return b; };
@@ -68,8 +95,8 @@ export class Audio {
     // Le micro de plein air garde trop de grave et pas assez d'air : on rééquilibre, pour que le vent se tienne aussi sur de petites enceintes.
     const bas = c.createBiquadFilter(), haut = c.createBiquadFilter();
     bas.type = 'lowshelf'; bas.frequency.value = 150; bas.gain.value = -7; haut.type = 'highshelf'; haut.frequency.value = 1500; haut.gain.value = 8;
-    this.lpAbri.connect(bas); bas.connect(haut); haut.connect(this.busV); this.busV.connect(this.maitre);
-    const envoi = c.createGain(); envoi.gain.value = 0.05; this.busV.connect(envoi); envoi.connect(this.rev); this.busV.connect(this.gEcho);
+    this.lpAbri.connect(bas); bas.connect(haut); haut.connect(this.busV); this.busV.connect(this.gVent);
+    const envoi = c.createGain(); envoi.gain.value = 0.05; this.busV.connect(envoi); envoi.connect(this.revVent); this.busV.connect(this.gEcho);
 
     const couche = (b, type, f, q, pan = 0) => {
       const s = source(b), fi = c.createBiquadFilter(), g = c.createGain(), p = c.createStereoPanner();
@@ -90,11 +117,11 @@ export class Audio {
     };
     this.pistes = {
       leger: piste(this.lpAbri, 16000), plaine: piste(this.lpAbri, 16000), dunes: piste(this.lpAbri, 16000), tempete: piste(this.lpAbri, 16000),
-      chant: piste(this.lpAbri, 9000), fil: piste(this.lpAbri, 9000), abri: piste(this.maitre, 2400),
+      chant: piste(this.lpAbri, 9000), fil: piste(this.lpAbri, 9000), abri: piste(this.gVent, 2400),
       // La tempête, deux fois plus lente : c'est le grondement du furvent.
-      rugit: piste(this.maitre, 420),
+      rugit: piste(this.gVent, 420),
     };
-    const rv = c.createGain(); rv.gain.value = 0.3; this.pistes.rugit.p.connect(rv); rv.connect(this.rev);
+    const rv = c.createGain(); rv.gain.value = 0.3; this.pistes.rugit.p.connect(rv); rv.connect(this.revVent);
     for (const [nom, q] of Object.entries(SONS)) {
       const bin = atob(q.b), o = new Uint8Array(bin.length);
       for (let i = 0; i < bin.length; i++) o[i] = bin.charCodeAt(i);
@@ -118,13 +145,14 @@ export class Audio {
       a.connect(g); b.connect(g); g.connect(this.lpN); a.start(); b.start();
       return { a, b };
     });
-    this.lpN.connect(this.gN); this.gN.connect(this.rev); const dn = c.createGain(); dn.gain.value = 0.3; this.gN.connect(dn); dn.connect(this.maitre);
+    this.lpN.connect(this.gN); this.gN.connect(this.revMus); const dn = c.createGain(); dn.gain.value = 0.3; this.gN.connect(dn); dn.connect(this.gMus);
 
     this.voixT = [0, 1].map(() => ({ v: 1, c: 1, t: 0, pan: 0 }));
     this.prochaine = c.currentTime + 6; this.tambour = c.currentTime; this.gamme = GAMMES[0]; this.racine = 146.83;
     this.raf = { v: 0, cours: false, pan: 0, dp: 0 }; this.lent = 0; this.bruitSuite = c.currentTime + 3;
     this.lieu = LIEUX.banquise; this.chord = c.currentTime; this.feuSuite = 0; this.dernierPas = 0;
     this.accord();
+    this.appliquer(0);
   }
 
   regler(p, v, t = 0.4) { if (this.ok) p.setTargetAtTime(v, this.c.currentTime, t); }
@@ -134,14 +162,14 @@ export class Audio {
     this.nappe.forEach((v, i) => { const f = r * Math.pow(2, n[i] / 12); this.regler(v.a.frequency, f, 3); this.regler(v.b.frequency, f, 3); });
   }
 
-  note(f, g = 0.2, dur = 3.4, lieu = this.rev, sec = 0.5, quand = 0) {
+  note(f, g = 0.2, dur = 3.4, lieu = this.revMus, sec = 0.5, quand = 0) {
     const c = this.c, t = c.currentTime + quand, o = [1, 2.01, 3.02, 4.2], v = [1, 0.42, 0.14, 0.06];
     const s = c.createGain(); s.gain.setValueAtTime(0, t); s.gain.linearRampToValueAtTime(g, t + 0.008); s.gain.exponentialRampToValueAtTime(0.0008, t + dur);
     for (let i = 0; i < o.length; i++) {
       const os = c.createOscillator(), g2 = c.createGain(); os.frequency.value = f * o[i]; g2.gain.value = v[i];
       os.connect(g2); g2.connect(s); os.start(t); os.stop(t + dur + 0.1);
     }
-    s.connect(lieu); const d = c.createGain(); d.gain.value = sec; s.connect(d); d.connect(this.maitre);
+    s.connect(lieu); const d = c.createGain(); d.gain.value = sec; s.connect(d); d.connect(this.gMus);
   }
 
   // Un éclat de bruit filtré : la matière de tous les petits sons du monde.
@@ -149,8 +177,8 @@ export class Audio {
     const c = this.c, t = c.currentTime + quand, s = c.createBufferSource(), fi = c.createBiquadFilter(), e = c.createGain(), p = c.createStereoPanner();
     s.buffer = b; fi.type = type; fi.Q.value = q; fi.frequency.setValueAtTime(f, t); if (f2) fi.frequency.exponentialRampToValueAtTime(f2, t + a + d);
     e.gain.setValueAtTime(0.0001, t); e.gain.exponentialRampToValueAtTime(g, t + a); e.gain.exponentialRampToValueAtTime(0.0001, t + a + d);
-    p.pan.value = pan; s.connect(fi); fi.connect(e); e.connect(p); p.connect(this.maitre);
-    if (rev) { const r = c.createGain(); r.gain.value = rev; p.connect(r); r.connect(this.rev); }
+    p.pan.value = pan; s.connect(fi); fi.connect(e); e.connect(p); p.connect(this.gFx);
+    if (rev) { const r = c.createGain(); r.gain.value = rev; p.connect(r); r.connect(this.revFx); }
     s.start(t, Math.random() * 7, a + d + 0.05);
   }
 
@@ -158,7 +186,7 @@ export class Audio {
     const c = this.c, t = c.currentTime + quand, o = c.createOscillator(), e = c.createGain(), p = c.createStereoPanner();
     o.type = type; o.frequency.setValueAtTime(f, t); if (f2) o.frequency.exponentialRampToValueAtTime(f2, t + a + d);
     e.gain.setValueAtTime(0.0001, t); e.gain.exponentialRampToValueAtTime(g, t + a); e.gain.exponentialRampToValueAtTime(0.0001, t + a + d);
-    p.pan.value = pan; o.connect(e); e.connect(p); p.connect(this.maitre); const r = c.createGain(); r.gain.value = rev; p.connect(r); r.connect(this.rev);
+    p.pan.value = pan; o.connect(e); e.connect(p); p.connect(this.gFx); const r = c.createGain(); r.gain.value = rev; p.connect(r); r.connect(this.revFx);
     o.start(t); o.stop(t + a + d + 0.05);
   }
 
@@ -191,20 +219,20 @@ export class Audio {
     else this.grain({ f: hasard(700, 1300), q: 1.3, g: 0.022, a: 0.003, d: 0.05, pan, rev: 0.05 });
   }
 
-  tom(g = 0.8, f0 = 120) {
+  tom(g = 0.8, f0 = 120, musique = false) {
     const c = this.c, t = c.currentTime, o = c.createOscillator(), s = c.createGain();
     o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(42, t + 0.22);
     s.gain.setValueAtTime(g, t); s.gain.exponentialRampToValueAtTime(0.001, t + 0.6);
-    o.connect(s); s.connect(this.maitre); const r = c.createGain(); r.gain.value = 0.3; s.connect(r); r.connect(this.rev); o.start(t); o.stop(t + 0.65);
+    o.connect(s); s.connect(musique ? this.gMus : this.gFx); const r = c.createGain(); r.gain.value = 0.3; s.connect(r); r.connect(musique ? this.revMus : this.revFx); o.start(t); o.stop(t + 0.65);
   }
 
   // Un motif de cinq notes qui monte : quelqu'un a nommé un lieu.
   decouverte() {
     if (!this.ok) return;
     const r = this.racine * 2;
-    [0, 7, 12, 14, 19].forEach((d, i) => this.note(r * Math.pow(2, d / 12), 0.13, 4, this.rev, 0.45, i * 0.17));
+    [0, 7, 12, 14, 19].forEach((d, i) => this.note(r * Math.pow(2, d / 12), 0.13, 4, this.revMus, 0.45, i * 0.17));
   }
-  perte() { if (this.ok) { this.note(this.racine / 2, 0.3, 5.5); this.note(this.racine / 2 * Math.pow(2, 3 / 12), 0.13, 5.5, this.rev, 0.5, 0.4); } }
+  perte() { if (this.ok) { this.note(this.racine / 2, 0.3, 5.5); this.note(this.racine / 2 * Math.pow(2, 3 / 12), 0.13, 5.5, this.revMus, 0.5, 0.4); } }
   coup() {
     if (!this.ok) return;
     this.grain({ f: 5200, f2: 700, q: 1.4, g: 0.55, a: 0.002, d: 0.18, pan: hasard(-0.3, 0.3), rev: 0.2 });
@@ -280,24 +308,26 @@ export class Audio {
     // Le piano ne joue que si rien d'autre ne parle. Dans un calme, il ose ; dans celui qui précède un furvent, il se tait.
     if (tempete < 0.2 && combat < 0.2 && approche < 0.02 && t > this.prochaine) {
       const g = this.gamme, n = 1 + Math.floor(Math.random() * 3), rc = camp > 0.5 ? this.racine / 1.5 : this.racine;
-      for (let i = 0; i < n; i++) this.note(rc * Math.pow(2, g[Math.floor(Math.random() * g.length)] / 12), 0.06 + Math.random() * 0.06, 4.5, this.rev, 0.3, i * hasard(0.34, 0.74));
+      for (let i = 0; i < n; i++) this.note(rc * Math.pow(2, g[Math.floor(Math.random() * g.length)] / 12), 0.06 + Math.random() * 0.06, 4.5, this.revMus, 0.3, i * hasard(0.34, 0.74));
       this.prochaine = t + hasard(7, 22) * (1 - accalmie * 0.5);
     }
     // Le tambour accélère avec le danger.
     const p = Math.max(tempete, combat);
     if (p > 0.15 && t > this.tambour) {
-      this.tom(0.28 + p * 0.5, 96 + Math.random() * 16);
+      this.tom(0.28 + p * 0.5, 96 + Math.random() * 16, true);
       this.tambour = t + 60 / (76 + p * 90 + combat * 40) * (Math.random() < 0.18 ? 0.5 : 1);
     }
   }
   contree(i) { this.gamme = GAMMES[i % GAMMES.length]; this.racine = [146.83, 130.81, 164.81, 110, 146.83, 123.47][i % 6]; if (this.ok) this.accord(); }
-  couper(m) { this.muet = m; if (this.ok) this.regler(this.maitre.gain, m || this.pause ? 0 : 1.5, 0.1); }
+  couper(m) { this.muet = m; this.volume('general', this.vol.general); }
   // Le menu : tout se tait, et reprend où il en était.
   suspendre(v) {
     this.pause = v;
     if (!this.ok) return;
     clearTimeout(this.tSusp);
-    if (v) { this.regler(this.maitre.gain, 0, 0.05); this.tSusp = setTimeout(() => this.c.suspend(), 260); }
-    else { this.c.resume(); this.regler(this.maitre.gain, this.muet ? 0 : 1.5, 0.12); }
+    if (v && !this.ecoute) { this.regler(this.maitre.gain, 0, 0.05); this.tSusp = setTimeout(() => this.c.suspend(), 260); }
+    else { this.c.resume(); this.regler(this.maitre.gain, this.niveau(), 0.12); }
   }
+  // Les réglages du son, menu ouvert : le jeu reste figé, mais on entend ce qu'on règle.
+  ecouter(v) { this.ecoute = v; this.suspendre(this.pause); }
 }
