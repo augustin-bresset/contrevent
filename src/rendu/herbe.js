@@ -26,8 +26,8 @@ export class Herbe {
     this.mesh = new THREE.Mesh(g, new THREE.ShaderMaterial({
       uniforms: this.u, side: THREE.DoubleSide,
       vertexShader: /* glsl */`
-        uniform sampler2D tH, tPal, tBruit, tVent; uniform vec2 uAnneau, uCentre, uHordeH; uniform float uTemps, uRayon, uPas, uRespirH, uPres, uBande;
-        attribute vec2 iG; varying vec3 vC, vP; varying float vT, vL, vProf;
+        uniform sampler2D tH, tPal, tBruit, tVent; uniform vec2 uAnneau, uCentre, uHordeH; uniform float uTemps, uRayon, uPas, uRespirH, uPres, uBande, uPeint;
+        attribute vec2 iG; varying vec3 vC, vP, vNs; varying float vT, vL, vProf;
         void main() {
           vec2 cel = iG + floor(uCentre / uPas);
           vec4 r = texture2D(tBruit, (mod(cel, 256.0) + 0.5) / 256.0);
@@ -55,17 +55,22 @@ export class Herbe {
           vec2 sol = pos + cote + cour * H * y * y;
           vec3 w3 = vec3(sol.x, hs + y * H * (1.0 - 0.34 * min(1.0, length(cour)) * y), -sol.y);
           vec3 ton = texture2D(tPal, vec2(6.5 / 7.0, sv)).rgb, lum = texture2D(tPal, vec2(1.5 / 7.0, sv)).rgb;
-          float var = 0.82 + 0.3 * r.g;
-          vC = mix(ton * 0.5, mix(ton, lum, 0.14 + 0.5 * vague), y) * var;
+          // Peinte, l'herbe reste dans le ton du sol : une nappe qui ondule, pas des brins qui scintillent.
+          float var = 0.82 + 0.3 * r.g * (1.0 - 0.6 * uPeint);
+          vC = mix(ton * mix(0.5, 0.7, uPeint), mix(ton, lum, (0.14 + 0.5 * vague) * (1.0 - 0.65 * uPeint)), y) * var;
           vP = vec3(w3.x, w3.y, -w3.z); vT = y; vL = 0.45 + 0.5 * y;
+          // La pente du sol sous le brin : l'herbe d'un versant à l'ombre est à l'ombre.
+          float hx = texture2D(tH, (pos + vec2(2.0, 0.0)) / uAnneau).r - texture2D(tH, (pos - vec2(2.0, 0.0)) / uAnneau).r;
+          float hz = texture2D(tH, (pos + vec2(0.0, 2.0)) / uAnneau).r - texture2D(tH, (pos - vec2(0.0, 2.0)) / uAnneau).r;
+          vNs = normalize(vec3(-hx, 4.0, hz));
           vec4 mv = viewMatrix * vec4(w3, 1.0); vProf = -mv.z;
           gl_Position = projectionMatrix * mv;
         }`,
       fragmentShader: /* glsl */`
-        precision highp float; varying vec3 vC, vP; varying float vT, vL, vProf;
+        precision highp float; varying vec3 vC, vP, vNs; varying float vT, vL, vProf;
         ${GLSL_COMMUN}
         void main() {
-          vec3 Q = vec3(vP.x, vP.y, -vP.z), n = normalize(vec3(uSoleil.x * 0.3, 1.0, uSoleil.z * 0.3));
+          vec3 Q = vec3(vP.x, vP.y, -vP.z), n = normalize(mix(vec3(uSoleil.x * 0.3, 1.0, uSoleil.z * 0.3), normalize(vNs) * 1.3, uPeint * 0.8));
           vec3 c = eclairer(vC * vC, n, Q, 0.6, soleilRelief(Q, 0.0), mix(0.4, 1.0, vL));
           // La lumière qui traverse le brin, vue à contre-jour.
           vec3 v = normalize(cameraPosition - Q);

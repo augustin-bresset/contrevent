@@ -6,6 +6,7 @@
   "description": "Remonter le vent : un jeu d'après La Horde du Contrevent d'Alain Damasio.",
   "scripts": {
     "dev": "vite --port 4380",
+    "admin": "vite --port 4380 --open \"/?admin&direct\"",
     "build": "vite build",
     "preview": "vite preview --port 4380",
     "artefact": "node outils/artefact.mjs"

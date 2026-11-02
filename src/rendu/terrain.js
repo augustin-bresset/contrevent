@@ -85,6 +85,8 @@ void couche(float i, vec2 p, float pres, inout vec3 c, inout vec3 d) {
     c = mix(c, mix(c, vec3(1.0), 0.55) * ca / MOY[k], pres); d = mix(d, vec3(d.xy * 0.5 + (da.xy - 0.5) * 1.6, da.z * 0.6 + d.z * 0.4), pres);
   }
   d.xy *= NRM[k];
+  // Peinte, la matière ne garde de la photographie que son grain : la couleur vient de la contrée.
+  c = mix(c, mix(vec3(1.0), mix(vec3(lumi(c)), c, 0.6), 0.5), uPeint); d.xy *= 1.0 - 0.45 * uPeint;
 }
 void main() {
   vec3 P = vec3(vW.x, vW.y, -vW.z);
@@ -144,6 +146,8 @@ void main() {
     cR = mix(vec3(dot(cR, vec3(0.3, 0.59, 0.11))), cR, 0.3); cR = mix(vec3(1.0), cR, 0.72);
     wR = clamp((qR - seuil) / 0.1 + (dR.z - 0.5) * 1.2, 0.0, 1.0);
     vec3 tR = mix(ombre, lum, 0.42) * prisR * 1.0;
+    // Peinte, la roche n'a plus le ciel pour l'éclaircir : elle reste plus près du ton du pays.
+    tR = mix(tR, mix(ombre, lum, 0.55) * max(prisR, 0.75), 0.6 * uPeint);
     alb = mix(alb, cR * tR, wR);
     nTex.xy = mix(nTex.xy, dR.xy * 1.7, wR);
   }
@@ -173,6 +177,9 @@ void main() {
     alb = mix(alb, vert * (0.55 + 0.5 * cS.g), clamp(herbeK * 1.5, 0.0, 1.0) * (0.34 + 0.56 * pre) * (1.0 - wR) * (1.0 - wN));
   }
 
+  // Peintes, les matières restent dans la gamme du pays : une tache de roche sombre ne troue pas la plaine.
+  alb = mix(alb, sqrt(alb * mix(lum, ombre, 0.3) * 0.8), 0.45 * uPeint);
+
   // Les rides du vent, en travers de lui, qui bossellent la lumière.
   float ondu = vW.z + 5.0 * bruit(vW.xz * 0.05) + 1.4 * bruit(vW.xz * 0.23);
   float rd = cos(ondu * 2.4) * 0.5 + cos(ondu * 5.1 + 1.0) * 0.16;
@@ -189,13 +196,17 @@ void main() {
   // L'ombre des nuages : la vraie, lue sur leur carte, au point où le rayon du soleil traverse leur couche.
   vec2 pn = P.xz + uSoleil.xz / uSoleil.y * 2100.0 + uVentN;
   float nuage = smoothstep(0.62 - uCouv * 0.24, 0.72 - uCouv * 0.24, texture2D(tNC, pn * 0.000024).r);
+  // Peinte, l'ombre portée a un bord net ; celle des nuages reste un voile.
+  porte = mix(porte, smoothstep(0.2, 0.7, porte), uPeint);
   float vis = lr.r * porte * (1.0 - 0.72 * nuage);
 
   float t = tempeteA(vW.x, vW.z);
   vec3 V = normalize(cameraPosition - P);
-  float ndl = max(dot(n, uSoleil), 0.0);
+  // Le passage franc de l'ombre au jour suit la forme du relief ; le grain de la matière n'y ajoute qu'un modelé doux.
+  float nd = max(dot(n, uSoleil), 0.0), ng = max(dot(nG, uSoleil), 0.0);
+  float ndl = mix(nd, max(0.0, rampe(ng) + (nd - ng) * 0.5), uPeint);
   vec3 sun = uSoleilCol * vis * (1.0 - 0.96 * t);
-  vec3 amb = cielDiffus(n) * mix(0.5, 1.0, lr.g) * (1.0 - 0.72 * t);
+  vec3 amb = ombreTeinte(cielDiffus(n), dv) * mix(0.5, 1.0, lr.g) * (1.0 - 0.72 * t);
   vec3 rebond = alb * uSoleilCol * 0.1 * (1.0 - n.y * 0.5) * lr.g;
 
   // Les voiles : sable ou neige que le vent fait filer au ras du sol.
@@ -215,13 +226,13 @@ void main() {
   float eau = bord > 0.0 ? 0.0 : smoothstep(0.1, -0.2, h);
   float mouille = smoothstep(1.4, 0.05, h) * (1.0 - eau) * (bord > 0.0 ? 0.0 : 1.0);
   vec3 D = alb * mix(1.0, 0.55, mouille) * (sun * ndl + amb + rebond);
-  vec3 S = ggx(n, V, uSoleil, mix(rug, 0.3, mouille), f0, sun);
-  S += alb * pow(1.0 - max(dot(nG, V), 0.0), 5.0) * amb * 0.5;                 // le lustre rasant du sable
+  vec3 S = ggx(n, V, uSoleil, mix(rug, 0.3, mouille), f0, sun) * (1.0 - 0.7 * uPeint * (1.0 - mouille));
+  S += alb * pow(1.0 - max(dot(nG, V), 0.0), 5.0) * amb * 0.5 * (1.0 - 0.6 * uPeint);   // le lustre rasant du sable
   // Le grain qui accroche : mica dans le sable, givre dans la neige. Il s'allume quand le regard ou le temps passe dessus.
   vec4 gg = texture2D(tBruit, vW.xz * 1.7 / 2.56);
   vec3 hv = normalize(uSoleil + V);
   float sc = pow(max(dot(normalize(gg.rgb - 0.5 + nG * 0.9), hv), 0.0), 900.0);
-  S += uSoleilCol * vis * sc * (wN * 3.0 + rides * 1.1 * (1.0 - wR)) * smoothstep(380.0, 60.0, vProf);
+  S += uSoleilCol * vis * sc * (wN * 3.0 + rides * 1.1 * (1.0 - wR)) * smoothstep(380.0, 60.0, vProf) * (1.0 - 0.75 * uPeint);
   col = D + S;
 
   if (eau > 0.0) {
@@ -235,6 +246,8 @@ void main() {
     vec3 ceau = mix(fondE, refl, clamp(fres, 0.0, 1.0));
     ceau += ggx(N2, V, uSoleil, 0.12, vec3(0.02), sun);
     ceau = mix(ceau, lum * 1.2 * (sun * 0.4 + amb), voile * 0.3);
+    // Peinte, l'eau est un aplat de ciel clair : un miroir, pas un trou.
+    ceau = mix(ceau, mix(lum, teinte(4, dv) * lumi(lum), 0.6) * (sun * 0.35 + amb * 1.1) + ggx(N2, V, uSoleil, 0.2, vec3(0.02), sun), 0.6 * uPeint);
     col = mix(col, ceau, eau);
   }
 
@@ -320,7 +333,7 @@ export class Terrain {
       uTemps: { value: 0 }, uNuit: { value: 0 }, uBrouillard: { value: 700 }, uReve: { value: 0 }, uSv: { value: 0 }, uEclair: { value: 0 },
       uFeu: { value: new THREE.Vector3() }, uNavireO: { value: new THREE.Vector4() },
       uRemousT: { value: Array.from({ length: 8 }, () => new THREE.Vector4()) },
-      uCarte: { value: 0 }, uDetail: { value: 1 }, uAbriV: { value: 0 },
+      uCarte: { value: 0 }, uDetail: { value: 1 }, uAbriV: { value: 0 }, uPeint: { value: 1 },
     };
     const mat = new THREE.ShaderMaterial({ uniforms: this.u, vertexShader: VERT, fragmentShader: FRAG });
     // Le cœur, sans trou, puis des anneaux qui doublent de pas à chaque fois ; ils mordent un peu l'un sur l'autre.

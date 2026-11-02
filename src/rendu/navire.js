@@ -56,10 +56,12 @@ export class Navire {
     h.layers.enable(1); h.frustumCulled = false; this.groupe.add(h);
 
     // Mâts, vergues : le bois qui tient tout ça.
+    // Pour remonter le vent, on ne le prend pas de face : les vergues sont brassées en biais, et la toile gonfle vers l'avant.
     const bois = [], MATS = [[-72, 96, 58], [-30, 136, 76], [14, 150, 84], [56, 122, 70], [92, 74, 44]];
+    const BRAS = 0.5, CA = Math.cos(BRAS), SA = Math.sin(BRAS), RETRAIT = 0.16;
     for (const [z, H, l] of MATS) {
       bois.push(nu(new THREE.CylinderGeometry(0.8, 1.9, H + 14, 14).translate(0, (H + 14) / 2 + 12, z)));
-      for (let k = 0; k < 6; k++) { const y = 26 + (H - 10) * k / 5, q = l * (1 - k * 0.11); bois.push(nu(new THREE.CylinderGeometry(0.34, 0.5, q * 2, 8).rotateZ(Math.PI / 2).translate(0, y, z - 1.6))); }
+      for (let k = 0; k < 6; k++) { const y = 26 + (H - 10) * k / 5, q = l * (1 - RETRAIT * k / 5); bois.push(nu(new THREE.CylinderGeometry(0.34, 0.5, q * 2, 8).rotateZ(Math.PI / 2).rotateY(BRAS).translate(0, y, z + 1.6))); }
       bois.push(nu(new THREE.CylinderGeometry(4, 3.2, 2, 14).translate(0, H * 0.72 + 16, z)));
     }
     this.groupe.add(Object.assign(new THREE.Mesh(mergeGeometries(bois), mCoque), { frustumCulled: false }));
@@ -68,14 +70,15 @@ export class Navire {
     const mVoile = new THREE.ShaderMaterial({
       uniforms: this.u, side: THREE.DoubleSide,
       vertexShader: /* glsl */`
-        uniform float uTemps; varying vec2 vUv; varying vec3 vN; varying vec3 vP, vM;
+        uniform float uTemps; attribute vec3 aDos, aLat; varying vec2 vUv; varying vec3 vN; varying vec3 vP, vM;
         void main() {
           vUv = uv; vec3 p = position;
-          float gon = sin(uv.x * 3.1416) * (0.42 + 0.58 * sin(uv.y * 3.1416));
-          float souffle = 11.0 + 1.6 * sin(uTemps * 0.7 + position.x * 0.03 + uv.y * 2.0);
+          // Tendue sur sa vergue en haut, libre en bas : c'est au milieu et vers le pied qu'elle se creuse.
+          float gon = sin(uv.x * 3.1416) * (1.0 - pow(uv.y, 4.0)) * (0.62 + 0.38 * sin(uv.y * 3.1416));
+          float souffle = 13.0 + 1.6 * sin(uTemps * 0.7 + position.x * 0.03 + uv.y * 2.0);
           float pan = sin(uv.y * 31.416) * 0.5 * gon;                     // la toile se creuse entre deux lattes
-          p.z -= gon * souffle + pan;
-          vec3 d = vec3(cos(uv.x * 3.1416) * 0.72, cos(uv.y * 3.1416) * 0.34 + cos(uv.y * 31.416) * 0.2, 1.0);
+          p += aDos * (gon * souffle + pan);
+          vec3 d = aLat * cos(uv.x * 3.1416) * 0.72 + vec3(0.0, cos(uv.y * 3.1416) * 0.34 + cos(uv.y * 31.416) * 0.2, 0.0) - aDos;
           vN = normalize(mat3(modelMatrix) * d); vP = p; vM = (modelMatrix * vec4(p, 1.0)).xyz;
           gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
         }`,
@@ -85,7 +88,7 @@ export class Navire {
         ${GLSL_OMBRE}
         void main() {
           vec3 n = normalize(vN);
-          if (!gl_FrontFacing) n = -n;
+          if (dot(n, cameraPosition - vM) < 0.0) n = -n;
           vec3 toile = mix(vec3(0.86, 0.78, 0.64), vec3(0.72, 0.6, 0.46), smoothstep(0.3, 1.0, vUv.y) * 0.5);
           float couture = smoothstep(0.03, 0.0, abs(fract(vUv.x * 13.0) - 0.5));
           float latte = smoothstep(0.016, 0.0, abs(fract(vUv.y * 5.0) - 0.5));
@@ -102,13 +105,14 @@ export class Navire {
     for (const [z, H, l] of MATS) {
       const g = new THREE.PlaneGeometry(l * 2, H - 10, 40, 40), p = g.getAttribute('position');
       for (let i = 0; i < p.count; i++) {
-        const t = (p.getY(i) + (H - 10) / 2) / (H - 10);
-        p.setX(i, p.getX(i) * (1 - 0.48 * t));     // plus étroites en haut, comme une aile
-        p.setY(i, p.getY(i) + (H - 10) / 2 + 26 + 8 * Math.abs(p.getX(i) / l) * Math.abs(p.getX(i) / l));
+        const t = (p.getY(i) + (H - 10) / 2) / (H - 10), x = p.getX(i) * (1 - RETRAIT * t), e = x / l;
+        // Droite sous sa vergue ; en bas, la bordure s'arque vers le haut.
+        p.setXYZ(i, x * CA, (H - 10) * t + 26 + 9 * (1 - e * e) * (1 - t) ** 3, z + 2.4 - x * SA);
       }
-      const q = nu(g.translate(0, 0, z - 2.4));
-      const u = g.index ? g.toNonIndexed().getAttribute('uv') : g.getAttribute('uv');
-      q.setAttribute('uv', u);
+      const q = nu(g), n = q.getAttribute('position').count;
+      q.setAttribute('uv', g.toNonIndexed().getAttribute('uv'));
+      q.setAttribute('aDos', new THREE.Float32BufferAttribute(new Float32Array(n * 3).map((_, i) => [SA, 0, CA][i % 3]), 3));
+      q.setAttribute('aLat', new THREE.Float32BufferAttribute(new Float32Array(n * 3).map((_, i) => [CA, 0, -SA][i % 3]), 3));
       voiles.push(q);
     }
     const v = new THREE.Mesh(mergeGeometries(voiles), mVoile);

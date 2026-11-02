@@ -1,8 +1,11 @@
 // Ce qui arrive à la Horde, dans l'ordre du roman : furvents, Physalis, Poursuite, chrones.
 // Le plan est fixe ; ses positions exactes, les chrones errants et les bavardages varient avec la graine.
 import { alea } from '../monde/bruit.js';
-import { A_LIEU, CHEMIN, CHUTE } from './textes.js';
+import { A_LIEU, ACCALMIE, CHEMIN, CHUTE, PRESAGE } from './textes.js';
 import { R } from './reglages.js';
+
+// La distance du mur, `tau` secondes avant qu'il soit sur nous : lent au loin, il prend de la vitesse en arrivant.
+const approche = (tau) => R.frontLent * tau + (R.frontLance - R.frontLent) * R.frontElan * (1 - Math.exp(-tau / R.frontElan));
 
 const REPLIQUES = [5, 13, 21, 28, 35];
 
@@ -58,7 +61,9 @@ export class Evenements {
 
   restaurer(faits) { for (const f of faits || []) this.faits.add(f); this.plan = this.plan.filter((p) => p.f > this.j.horde.s / this.j.monde.L); }
 
-  actifs() { return !!this.tempete || this.ennemis.length > 0 || !!this.corroyeur; }
+  actifs() { return !!this.tempete || this.defense(); }
+  // On se bat : le clic sert à frapper, pas à tracer.
+  defense() { return this.ennemis.length > 0 || !!this.corroyeur; }
 
   dire(id, texte) { if (this.j.horde.vit(id)) { this.j.hud.dire(id, texte); return true; } return false; }
 
@@ -85,6 +90,8 @@ export class Evenements {
     const c = monde.contreeA(horde.s);
     if (c.id !== this.contree) { this.contree = c.id; j.audio.contree(monde.contrees.indexOf(c)); j.changerAir(c); }
 
+    j.vent.avance = f;
+    this.majPresage(dt);
     this.majTempete(dt);
     this.majNavire(dt);
     this.majChrones(dt);
@@ -120,13 +127,63 @@ export class Evenements {
   }
 
   // --- Furvent ---
-  furvent({ m, premier }) {
-    if (this.tempete) return;
+  // Il s'annonce : le vent tombe d'abord, trop vite, puis il monte sans plus redescendre, jusqu'au mur.
+  furvent(e) {
+    if (this.tempete || this.presage) return;
+    this.presage = { e, t: 0, dit: 0, monte: 0, lance: false };
+    const fr = this.j.vent.front; fr.a = fr.b = -1e6; fr.presence = 0;
+  }
+  // Le mur se règle sur l'heure où il sera sur nous (`fr.tau`, en secondes) : il traîne au loin, puis fond sur la Horde.
+  // Que la Horde marche vers lui ne lui vole pas une seconde. Ses lobes, eux, prennent de l'avance ou en perdent.
+  suivreFront(dt) {
+    const fr = this.j.vent.front;
+    fr.tau -= dt; this.tFront = (this.tFront ?? 0) + dt;
+    if (fr.tau > 0) {
+      fr.a = this.j.horde.s + approche(fr.tau) + 30 * Math.sin(this.tFront * 0.31) * Math.min(1, fr.tau / 6);
+      fr.b = fr.a + fr.long;
+    } else {
+      // Passée la tête, le corps défile au pas du vent, par poussées : c'est lui qui fait durer la tempête.
+      fr.a -= (R.frontVitesse + (R.frontLance - R.frontVitesse) * Math.exp(fr.tau / 3)) * dt;
+      fr.b -= R.frontVitesse * (1 + 0.13 * Math.sin(this.tFront * 0.31) + 0.06 * Math.sin(this.tFront * 0.97 + 2)) * dt;
+    }
+    fr.presence = Math.min(this.voile, fr.presence + dt / R.frontParaitre);
+  }
+  // Le mur sera sur nous dans `tau` secondes.
+  lancerFront(tau, m) {
+    const fr = this.j.vent.front;
+    Object.assign(fr, { tau, long: 900 + m * 120, m, presence: 0 });
+    this.suivreFront(0);
+  }
+  majPresage(dt) {
+    const P = this.presage, { j } = this;
+    if (!P) {
+      // Une accalmie d'elle-même, de loin en loin : quelqu'un la remarque.
+      const dort = j.vent.humeur < 0.6 && !this.tempete;
+      if (dort && !this.dort && this.r() < 0.5 && !this.actifs()) { const l = ACCALMIE.filter(([id]) => j.horde.vit(id)), q = l[Math.floor(this.r() * l.length)]; if (q) j.hud.dire(q[0], q[1]); }
+      this.dort = dort;
+      return;
+    }
+    P.t += dt;
+    const v = j.vent, a = j.horde.s / j.monde.L, q = P.t / R.presageDuree, creux = mix(R.calme, R.calmeFin, a), fort = mix(R.presageFort, R.presageFortFin, a);
+    P.monte = Math.max(0, (q - R.presageCreux) / (1 - R.presageCreux));
+    v.impose = P.monte > 0 ? mix(creux, fort, P.monte ** 1.4) : creux;
+    const dire = (cle) => { this.dire('oroshi', PRESAGE[cle][Math.floor(this.r() * PRESAGE[cle].length)]); P.dit++; };
+    if (P.dit === 0 && q > 0.05) dire('tombe');
+    if (P.dit === 1 && P.monte > 0.28) dire('monte');
+    // Quand le vent remonte, le mur paraît sur l'horizon : il a tout le présage pour traverser le pays.
+    // Sans Oroshi, personne ne le voit venir : il reste noyé dans le lointain jusqu'à l'alerte.
+    const arrivee = R.presageDuree + (j.horde.vit('oroshi') ? R.alerte : 2) + R.delaiMur;
+    this.voile = j.horde.vit('oroshi') ? 1 : 0.1;
+    if (P.lance) this.suivreFront(dt);
+    else if (approche(arrivee - P.t) <= R.frontLoin) { P.lance = true; this.lancerFront(arrivee - P.t, P.e.m); }
+    if (P.t >= R.presageDuree) { this.presage = null; this.dechainer(P.e, P.lance); }
+  }
+  dechainer({ m, premier }, lance = false) {
     const { j } = this, oroshi = j.horde.vit('oroshi');
     // Le mur est déjà là, sur l'horizon : l'alerte ne fait que donner le temps de le voir venir.
-    const fr = j.vent.front, av = oroshi ? R.alerte : 2;
-    this.tempete = { m, longueur: 900 + m * 120, premier, gronde: false };
-    fr.a = j.horde.s + R.frontDepart + (R.frontVitesse / R.frontElan) * (Math.exp(R.frontElan * av) - 1); fr.b = fr.a + this.tempete.longueur; fr.m = m; fr.presence = 0;
+    this.tempete = { m, premier, gronde: false };
+    this.voile = 1;
+    if (!lance) this.lancerFront((oroshi ? R.alerte : 2) + R.delaiMur, m);
     if (oroshi) j.hud.dire('oroshi', premier ? 'Ça vient de l’amont. Un furvent, le premier. Trouvez un creux, et faites bloc.' : 'Furvent. Il arrive. Un creux, vite.');
     else j.hud.dire('sov', 'Oroshi n’est plus là pour l’entendre venir. Il est déjà sur nous.');
     if (premier) j.hud.aide(j.tactile ? 'Touchez Faire bloc : la Horde ralentit, mais elle tient.' : 'Espace ou clic droit : faire bloc. La Horde ralentit, mais elle tient.', 16);
@@ -145,13 +202,13 @@ export class Evenements {
     const T = this.tempete, { j } = this;
     if (!T) { j.intensite = Math.max(0, j.intensite - dt * 0.4); return; }
     const fr = j.vent.front, h0 = j.horde;
-    fr.presence = Math.min(1, fr.presence + dt / 3.5);
-    // Au loin, il dévore l'horizon ; il prend son allure en arrivant sur nous.
-    const v = R.frontVitesse + Math.max(0, fr.a - h0.s - R.frontDepart) * R.frontElan;
-    fr.a -= v * dt; fr.b -= v * dt;
+    this.suivreFront(dt);
     if (fr.a - h0.s > R.frontDepart) { j.intensite = Math.min(0.35, j.intensite + dt * 0.04); return; }
     if (!T.gronde) { T.gronde = true; j.audio.tom(0.9, 70); }
     const ici = j.vent.masque(j.horde.s, j.horde.x);
+    // Le vent qui montait se fond dans le mur : il ne s'y ajoute pas, et il ne revient pas une fois le mur passé.
+    T.dedans ||= ici > 0.5;
+    j.vent.impose = T.dedans ? 1 : mix(j.vent.impose ?? 1, 1, ici);
     j.intensite += (Math.max(ici, 0.3) - j.intensite) * (1 - Math.exp(-dt * 1.4));
     if (ici > 0.6 && !T.vu) { T.vu = true; j.secousse(0.8); }
     // À découvert, le furvent arrache : le bloc retarde, seul un vrai abri protège.
@@ -170,7 +227,7 @@ export class Evenements {
     if (ici > 0.4 && T.foudre <= 0) { T.foudre = 1.6 + this.r() * 4.5; j.eclair(); }
     if (fr.b < j.horde.s - 260) {
       fr.a = fr.b = -1e6; fr.m = 1; fr.presence = 0;
-      this.tempete = null; j.balise = null;
+      this.tempete = null; j.balise = null; j.vent.accalmie();
       const m = j.horde.vivants().length;
       this.dire('sov', m === 23 ? 'Il est passé. Vingt-trois. Je recompte, pour le plaisir.' : `Il est passé. Nous sommes ${m}.`);
       j.sauver();

@@ -4,7 +4,7 @@
 import * as THREE from 'three';
 import { GLSL_ONDE } from './communs.js';
 
-const LARG = 1800, LONG = 40;
+const LARG = 3600, LONG = 40;
 
 export class Filets {
   constructor(renderer, lignes, tH, tPal, uAnneau, uBande) {
@@ -60,7 +60,7 @@ export class Filets {
           vC2 = aC;
           vA = saut > 0.5 ? 0.0 : pow(q, 0.7) * smoothstep(0.0, 0.5, length(a.xy - a.zw) * 6.0);
           // Vu de dehors, rien ne file derrière le mur ; dedans, les filets se perdent dans la poussière.
-          vA *= 1.0 - uFrontF.y * smoothstep(-30.0, 70.0, pa.y - uFrontF.x - ondeFront(pa.x));
+          vA *= 1.0 - uFrontF.y * smoothstep(-30.0, 70.0, pa.y - uFrontF.x - ondeFront(pa.x, uFrontF.x));
           vA *= mix(1.0, smoothstep(2100.0, 520.0, ca.w), uChaud);
           vC = texture(tPal, vec2(3.5 / 7.0, pa.y / uBande)).rgb;
         }`,

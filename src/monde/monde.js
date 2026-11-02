@@ -54,9 +54,13 @@ export class Monde {
     const cle = Math.round(x / 24) * 4096 + Math.round(s / 24);
     if (cle === this.cleSolides) return;
     this.cleSolides = cle;
-    this.casesSolides = new Map();
-    const R = 210, L = this.casesSolides;
+    this.casesSolides = this.semesAutour(x, s, 210);
+  }
+  // Les emprises semées dans un disque, rangées par cases. `gros` passe le menu : pour viser loin, sans tout relire.
+  semesAutour(x, s, R, gros = false) {
+    const L = new Map();
     for (const G of GRILLES) {
+      if (gros && !G.grands && G.cote < 24) continue;
       const n = Math.ceil(R / G.cote), i0 = Math.floor(x / G.cote), j0 = Math.floor(s / G.cote);
       for (let j = j0 - n; j <= j0 + n; j++) for (let i = i0 - n; i <= i0 + n; i++) {
         semerCase(this, i, j, G, (forme, sx, ss, taille, hb, k, q0, ton, ci, cj) => {
@@ -70,6 +74,7 @@ export class Monde {
         }, x, s, R);
       }
     }
+    return L;
   }
   plein(x, s, marge = 0) {
     const l = this.autour(x, s);
@@ -82,6 +87,28 @@ export class Monde {
     const l = this.casesSolides?.get(Math.floor(x / 64) * 4096 + Math.floor(s / 64));
     if (l) for (const e of l) { const r = e.r + marge; if ((x - e.x) ** 2 + (s - e.s) ** 2 < r * r) return true; }
     return false;
+  }
+  // Ce que heurte un rayon à cette hauteur, s'il heurte quelque chose. `semes` : ce qu'a rendu semesAutour.
+  heurte(x, s, y, semes) {
+    const c = Math.floor(x / 64) * 4096 + Math.floor(s / 64);
+    for (const l of [this.casesBati.get(c), semes.get(c)]) if (l) for (const e of l) {
+      if ((x - e.x) ** 2 + (s - e.s) ** 2 < e.r * e.r && y < Math.max(0, this.h(e.x, e.s)) + e.h) return e;
+    }
+    return null;
+  }
+  // Le point libre le plus proche : ce qui mord sur un mur glisse à son pied. null si tout est plein autour.
+  degager(x, s, marge) {
+    const semes = this.semesAutour(x, s, 130);
+    for (let i = 0; i < 12; i++) {
+      const c = Math.floor(x / 64) * 4096 + Math.floor(s / 64);
+      let libre = true;
+      for (const l of [this.casesBati.get(c), semes.get(c)]) if (l) for (const e of l) {
+        const dx = x - e.x, ds = s - e.s, d = Math.hypot(dx, ds) || 1, r = e.r + marge;
+        if (d < r) { x = e.x + dx / d * (r + 0.5); s = e.s + ds / d * (r + 0.5); libre = false; }
+      }
+      if (libre) return { x, s };
+    }
+    return null;
   }
   // Un corps qui mord sur un mur en ressort par le plus court.
   ecarter(m) {

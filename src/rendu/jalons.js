@@ -22,11 +22,12 @@ export class Jalons {
       m.renderOrder = 2.5; m.visible = false; m.frustumCulled = false; this.groupe.add(m); return m;
     });
   }
-  maj(hx, hs, points, temps) {
+  // `avant` : les coudes du détour jusqu'au premier point, tracés sans anneau.
+  maj(hx, hs, points, temps, avant = []) {
     const { monde: M } = this, P = this.pos.array;
     let n = 0, ax = hx, as = hs;
     const dash = 2.2, vide = 2.4;
-    for (const q of points) {
+    for (const q of avant.length ? [...avant, ...points] : points) {
       const lon = Math.hypot(q.x - ax, q.s - as) || 1, ux = (q.x - ax) / lon, us = (q.s - as) / lon, e = 0.14;
       for (let d = 1.5; d < lon - 1.5 && n < MAX_TIRETS; d += dash + vide) {
         const f = Math.min(d + dash, lon - 1.2);

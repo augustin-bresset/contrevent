@@ -267,18 +267,35 @@ export class Post {
         const float H = 640.0;
         float ign(vec2 p) { return fract(52.9829189 * fract(dot(p, vec2(0.06711056, 0.00583715)))); }
         float reb(float x, float a, float b) { return clamp((x - a) / (b - a), 0.0, 1.0); }
+        // Deux phases qui se relaient : chaque volute naît, monte et se fond pendant que l'autre prend le relais.
+        // Sans elles, la poussière serait une image qui glisse d'un bloc.
+        const float CYCLE = 7.0;
+        float P0, P1, A0, A1, NORM;
+        void phases() {
+          P0 = fract(uTemps / CYCLE); P1 = fract(P0 + 0.5);
+          A0 = 1.0 - abs(2.0 * P0 - 1.0); A1 = 1.0 - A0; NORM = inversesqrt(A0 * A0 + A1 * A1);
+        }
+        float relais(vec3 w, vec3 v, float k, vec3 dec, int c) {
+          vec4 a = texture(tN3, (w - v * P0 * CYCLE) * k + dec), b = texture(tN3, (w - v * P1 * CYCLE) * k + dec + 0.41);
+          float x = c == 0 ? a.r * A0 + b.r * A1 : a.g * A0 + b.g * A1;
+          return (x - 0.5 * (A0 + A1)) * NORM + 0.5;
+        }
         // La forme du mur, comme une surface : F > 0 à l'intérieur. De grands choux, et de plus petits sur les grands.
         float champ(vec3 p, bool fin, out float q) {
-          float s = -p.z, y = p.y - uSolY, yn = max(y, 0.0) / H, nez = 130.0 * smoothstep(0.04, 0.4, yn) * smoothstep(1.2, 0.6, yn);
-          q = s - (uFrontT.x + ondeFront(p.x) - nez);
+          float s = -p.z, y = p.y - uSolY, yn = max(y, 0.0) / H, nez = 110.0 * smoothstep(0.03, 0.3, yn) * smoothstep(1.2, 0.6, yn);
+          q = s - (uFrontT.x + ondeFront(p.x, uFrontT.x) - nez);
           if (q < -430.0) return -430.0;
-          vec3 w = vec3(p.x, y * 1.35 - uTemps * 13.0, q * 0.84 + uTemps * 7.0);
-          vec4 n = texture(tN3, w * 0.00074), n2 = texture(tN3, w.zxy * 0.0024 + 0.37);
-          float F = q + (n.r - 0.62) * 1150.0 + (n2.g - 0.62) * 340.0;
-          // Le sommet : de grands dômes, qui se dressent à mesure que le mur arrive.
+          // Au pied, le mur est une seule masse qui roule au ras du sol ; les choux se creusent en montant.
+          float amp = mix(0.3, 1.0, smoothstep(0.0, 0.35, yn));
+          vec3 w = vec3(p.x, y * 1.35, q * 0.84);
+          // Dans le repère du mur, l'air monte le long de la face, puis repart en arrière au sommet : la tête roule sur elle-même.
+          vec3 v = vec3(0.0, mix(18.0, 6.0, smoothstep(0.3, 0.9, yn)), mix(-7.0, 16.0, smoothstep(0.25, 0.85, yn)));
+          vec4 n = texture(tN3, (w - vec3(0.0, uTemps * 7.0, -uTemps * 2.0)) * 0.00074);
+          float F = q + ((n.r - 0.62) * 1150.0 + (relais(w.zxy, v.zxy, 0.0024, vec3(0.37), 1) - 0.62) * 340.0) * amp;
+          // Le sommet : de grands dômes, qui se dressent à mesure que le mur sort du lointain.
           float haut = H * (1.05 + 0.34 * sin(p.x * 0.0023 + 0.7) + 0.22 * sin(p.x * 0.0061 + 2.1)) * (0.3 + 0.7 * uFrontT.z);
           F -= max(y - haut * 0.45, 0.0) * 2.6;
-          if (fin && F > -130.0) F += (texture(tN3, w * 0.0086).r - 0.62) * 170.0 + (texture(tN3, w.yzx * 0.021).g - 0.62) * 46.0;
+          if (fin && F > -130.0) F += ((relais(w, v * 1.6, 0.0086, vec3(0.0), 0) - 0.62) * 170.0 + (texture(tN3, (w.yzx - v.yzx * uTemps * 0.5) * 0.021).g - 0.62) * 46.0) * mix(0.6, 1.0, amp);
           return F;
         }
         // Combien de poussière en p.
@@ -286,14 +303,15 @@ export class Post {
           float F = champ(p, fin, q), y = p.y - uSolY;
           if (q < -430.0) return 0.0;
           float d = reb(F, 0.0, 46.0) * 1.6;
-          // Devant le pied, les doigts de sable que le mur pousse au ras du sol.
+          // Devant le pied, les doigts de sable que le mur lance au ras du sol : ils filent devant lui, et s'éteignent.
           float ras = smoothstep(58.0, 2.0, y) * smoothstep(-320.0, -40.0, q);
           if (ras > 0.0) {
-            vec4 r = texture(tN3, vec3(p.x * 0.0031, y * 0.007, q * 0.0007 + uTemps * 0.14));
+            vec4 r = texture(tN3, vec3(p.x * 0.0031, y * 0.007, (q + uTemps * 38.0) * 0.004));
             d = max(d, (0.04 + reb(r.r, 0.54, 0.84) * 0.42) * ras);
           }
           // Derrière la tête, le corps du furvent ne se voit plus : c'est l'air où l'on marche.
-          return d * mix(0.03, 1.0, smoothstep(880.0, 520.0, q));
+          // Loin, il sort peu à peu du lointain.
+          return d * mix(0.03, 1.0, smoothstep(880.0, 520.0, q)) * smoothstep(0.0, 0.45, uFrontT.z);
         }
         void main() {
           float z = texture2D(tD, vUv).r;
@@ -312,6 +330,7 @@ export class Post {
           if (V.y > 1e-4) t1 = min(t1, (yH - uCam.y) / V.y);
           else if (V.y < -1e-4) { t1 = min(t1, (uSolY - 12.0 - uCam.y) / V.y); t0 = max(t0, (yH - uCam.y) / V.y); }
           if (t1 <= t0) { gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0); return; }
+          phases();
           float dt = max((t1 - t0) / float(uPas), 14.0), j = ign(gl_FragCoord.xy + uI * 5.588), T = 1.0;
           vec3 L = vec3(0.0), hautC = cielLu(vec3(0.0, 1.0, 0.0)), basC = cielLu(normalize(vec3(V.x, 0.05, V.z)));
           bool peau = false; float lamb = 1.0, ciel = 0.5;
@@ -321,7 +340,7 @@ export class Post {
             if (t >= t1) break;
             vec3 P = uCam + V * t;
             float q, d = densite(P, true, q);
-            d *= smoothstep(50.0, 250.0, t) * (t < dS ? 1.0 : loin);
+            d *= smoothstep(30.0, 150.0, t) * (t < dS ? 1.0 : loin);
             if (d < 0.004) continue;
             // La peau du mur, une fois par rayon : c'est elle qui dessine les choux.
             if (!peau && d > 0.3) {
@@ -356,12 +375,12 @@ export class Post {
     // L'air : le ciel derrière tout, et la brume devant ce qui s'éloigne.
     this.uA = {
       ...u, tC: { value: null }, tD: { value: this.prof }, tAO: { value: this.ao.texture }, tVol: { value: this.vol.texture }, tNu: { value: null }, tFr: { value: this.fr.texture }, ...pos,
-      uAOn: { value: 1 }, uVolOn: { value: 1 }, uFrOn: { value: 0 }, uSolY: { value: 0 }, uMonts: { value: 1 },
+      uAOn: { value: 1 }, uVolOn: { value: 1 }, uFrOn: { value: 0 }, uSolY: { value: 0 }, uMonts: { value: 1 }, uPxA: { value: new THREE.Vector2() },
     };
     this.mAir = new THREE.ShaderMaterial({
       ...opt, uniforms: this.uA,
       fragmentShader: /* glsl */`
-        precision highp float; uniform sampler2D tC, tD, tAO, tVol, tNu, tFr; uniform float uAOn, uVolOn, uFrOn, uSolY, uMonts; varying vec2 vUv;
+        precision highp float; uniform sampler2D tC, tD, tAO, tVol, tNu, tFr; uniform float uAOn, uVolOn, uFrOn, uSolY, uMonts; uniform vec2 uPxA; varying vec2 vUv;
         ${GLSL_POS}
         ${GLSL_COMMUN}
         float crete(float a, float f, float s) { return fbm3(vec2(a * f + s, s * 3.1)); }
@@ -389,6 +408,8 @@ export class Post {
           c = mix(c, air * vec3(0.8, 0.84, 0.92) * 0.86, m2 * 0.82);
           return c;
         }
+        // L'inverse de la distance : sur un plan, il varie en ligne droite à l'écran, si bien que seules les ruptures ressortent.
+        float inv(vec2 uv) { float z = texture2D(tD, uv).r; return z >= 1.0 ? 0.0 : 1.0 / length(relatif(uv, z)); }
         void main() {
           float z = texture2D(tD, vUv).r;
           vec3 R = relatif(vUv, z); float d = length(R); vec3 V = R / d;
@@ -397,6 +418,15 @@ export class Post {
           if (z >= 1.0) c = f;
           else {
             if (uAOn > 0.5) c *= mix(1.0, texture2D(tAO, vUv).r, 0.86);
+            // Le trait : le bord de ce qui se détache sur plus lointain reçoit un contour d'encre, du côté de la chose.
+            // Il s'efface avec la distance ; au-delà, la brume dessine seule.
+            if (uPeint > 0.01 && d < 520.0) {
+              float w = 1.0 / d;
+              float e = 4.0 * w - inv(vUv + vec2(uPxA.x, 0.0)) - inv(vUv - vec2(uPxA.x, 0.0)) - inv(vUv + vec2(0.0, uPxA.y)) - inv(vUv - vec2(0.0, uPxA.y));
+              float tr = smoothstep(0.06, 0.2, e / w) * smoothstep(520.0, 60.0, d) * uPeint;
+              float dvA = clamp(-(uCam.z + R.z) / uBande, 0.0, 1.0);
+              c = mix(c, lumi(c) * 0.22 * teinte(2, dvA), tr * 0.8);
+            }
             // La brume : dense au ras du sol, elle se dilue en montant.
             float a = (uCam.y - uSolY) / uBrumeH, b = V.y * d / uBrumeH, fq = abs(b) < 1e-3 ? 1.0 : (1.0 - exp(-b)) / b;
             float tau = uBrume * exp(-max(a, 0.0)) * d * fq;
@@ -538,7 +568,7 @@ export class Post {
       this.bas[i].setSize(a, b); this.haut[i].setSize(a, b); this.tailles.push([a, b]);
     }
     this.u.uPx.value.set(1 / W, 1 / H); this.u.uAsp.value = w / h; this.uAO.uAsp.value = w / h;
-    this.uT.uPx.value.set(1 / W, 1 / H); this.neuf = true;
+    this.uT.uPx.value.set(1 / W, 1 / H); this.uA.uPxA.value.set(1 / W, 1 / H); this.neuf = true;
     this.uAO.uPx.value.set(2 / W, 2 / H);
   }
   passe(mat, cible) { this.quad.material = mat; this.r.setRenderTarget(cible); this.r.render(this.sc, this.cam); }

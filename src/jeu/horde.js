@@ -33,7 +33,7 @@ export class Horde {
   vit(id) { const m = this.membres.find((q) => q.id === id); return m && m.vivant; }
 
   perdre(m, cause) {
-    if (!m.vivant) return;
+    if (!m.vivant || this.invincible) return;
     m.vivant = false; m.chute = 1; this.nb--;
     this.onPerte(m, cause);
   }
@@ -114,7 +114,7 @@ export class Horde {
     this.x = Math.max(8, Math.min(monde.W - 8, this.x)); this.s = Math.max(30, Math.min(monde.L - 4, this.s));
     this.vitesse = Math.hypot(vx, vs);
 
-    this.souffle = Math.max(0, Math.min(1, this.souffle - effort * dt * ralenti));
+    this.souffle = this.invincible ? 1 : Math.max(0, Math.min(1, this.souffle - effort * dt * ralenti));
     if (this.souffle <= 0) {
       this.chuteDans -= dt;
       // Quand l'un tombe, les autres reprennent sa part : le temps d'atteindre un abri, pas plus.

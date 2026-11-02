@@ -7,6 +7,7 @@ import { SONS } from './sons/vent.js';
 const GAMMES = [[0, 2, 7, 9, 12, 14, 19], [0, 3, 7, 10, 12, 15, 19], [0, 2, 5, 7, 12, 14, 17]];
 const hasard = (a, b) => a + Math.random() * (b - a);
 const lisse = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+const VOLUME = 2;       // le niveau du vent à pleine force
 
 // Ce que chaque sol fait au vent : son grave, son chant dans les obstacles, le sable qu'il porte, et le bruit qui lui est propre.
 const LIEUX = {
@@ -121,7 +122,7 @@ export class Audio {
 
     this.voixT = [0, 1].map(() => ({ v: 1, c: 1, t: 0, pan: 0 }));
     this.prochaine = c.currentTime + 6; this.tambour = c.currentTime; this.gamme = GAMMES[0]; this.racine = 146.83;
-    this.raf = { v: 0, cible: 0, fin: 0, suite: c.currentTime + 4, pan: 0, dp: 0 }; this.lent = 0; this.bruitSuite = c.currentTime + 3;
+    this.raf = { v: 0, cours: false, pan: 0, dp: 0 }; this.lent = 0; this.bruitSuite = c.currentTime + 3;
     this.lieu = LIEUX.banquise; this.chord = c.currentTime; this.feuSuite = 0; this.dernierPas = 0;
     this.accord();
   }
@@ -215,18 +216,15 @@ export class Audio {
   }
   alerte() { if (this.ok) { this.tom(0.7, 90); this.note(this.racine / 4, 0.3, 6); } }
 
-  maj(dt, { force = 0, tempete = 0, combat = 0, camp = 0, silence = 0, abri = 0, relief = 'banquise', avance = 0, approche = 0 }) {
+  maj(dt, { force = 0, rafale = 0, tempete = 0, combat = 0, camp = 0, silence = 0, abri = 0, relief = 'banquise', avance = 0, approche = 0 }) {
     if (!this.ok || this.pause) return;
     const c = this.c, t = c.currentTime, L = (this.lieu = LIEUX[relief] || LIEUX.banquise), R = this.raf;
     this.lent -= dt;
 
-    // Les rafales : elles naissent d'un côté, gonflent, et passent de l'autre.
-    if (t > R.suite) {
-      const fort = Math.min(1, force / 1.6);
-      R.cible = hasard(0.35, 0.6 + 0.4 * fort); R.fin = t + hasard(1.2, 3.4); R.suite = R.fin + hasard(3, 15) * (1.25 - fort);
-      R.pan = hasard(-0.9, 0.9); R.dp = -Math.sign(R.pan) * hasard(0.2, 0.5);
-    }
-    R.v += ((t < R.fin ? R.cible : 0) - R.v) * (1 - Math.exp(-dt * (t < R.fin ? 1.5 : 0.7)));
+    // Les rafales sont celles du jeu : ce qu'on voit passer, on l'entend. Elles naissent d'un côté et passent de l'autre.
+    if (rafale > 0 && !R.cours) { R.pan = hasard(-0.9, 0.9); R.dp = -Math.sign(R.pan) * hasard(0.3, 0.6); }
+    R.cours = rafale > 0;
+    R.v += (rafale - R.v) * (1 - Math.exp(-dt * (rafale > R.v ? 6 : 1.6)));
     R.pan = Math.max(-1, Math.min(1, R.pan + R.dp * dt));
 
     if (this.lent > 0) return;
@@ -235,7 +233,9 @@ export class Audio {
     const f = Math.min(1, force / 2.2) * (1 - silence), r = R.v, ab = Math.min(1, abri), tot = Math.min(1.3, f + r * 0.3);
     // À l'abri, le vent passe au-dessus : on ne garde que le grave, et le silence relatif s'entend.
     this.regler(this.lpAbri.frequency, 16000 * Math.pow(0.05, ab * (0.65 + 0.35 * camp)), 0.5);
-    this.regler(this.busV.gain, (1 - 0.5 * ab) * (1 - silence), 0.5);
+    // Le vent s'entend à sa mesure : de l'accalmie, où l'on entend ses pas, au hurlement.
+    const vol = VOLUME * Math.pow(10, (-30 + 30 * Math.pow(Math.min(1, tot / 0.95), 0.55)) / 20);
+    this.regler(this.busV.gain, (1 - 0.5 * ab) * (1 - silence) * vol, 0.32);
     this.regler(this.gEcho.gain, (L.echo || 0) * 0.3, 2);
 
     const P = this.pistes, q = (nom, g, f, v, pan = 0, tg = 0.5) => {
@@ -243,11 +243,11 @@ export class Audio {
       if (e.s && v) this.regler(e.s.playbackRate, v, 0.8);
     };
     // La force passe d'un vent à l'autre : une brise, une plaine, puis le désert qui hurle.
-    const clair = 1500 + tot * 13000, passe = R.pan * r * 0.75;
-    q('leger', (1 - lisse(0.25, 0.7, tot)) * (0.34 + tot * 0.9), clair, 0.96 + tot * 0.12, passe * 0.4);
-    q('plaine', lisse(0.1, 0.48, tot) * (1 - 0.5 * lisse(0.75, 1.15, tot)) * (0.5 + tot * 0.5), clair, 0.9 + tot * 0.22 + r * 0.06, passe);
-    q('dunes', lisse(0.34, 0.8, tot) * 0.62 * Math.min(1.2, L.sable + 0.3), clair, 0.94 + tot * 0.14, -passe);
-    q('tempete', lisse(0.5, 1, tot) * (0.45 + tot * 0.55) + tempete * 0.3, clair, 0.88 + tot * 0.2 + r * 0.08, passe * 0.6);
+    const clair = 800 + 14000 * Math.pow(Math.min(1.1, tot), 1.4), passe = R.pan * r * 0.75;
+    q('leger', (1 - lisse(0.25, 0.7, tot)) * (0.34 + tot * 0.9), clair, 0.92 + tot * 0.2, passe * 0.4);
+    q('plaine', lisse(0.1, 0.48, tot) * (1 - 0.5 * lisse(0.75, 1.15, tot)) * (0.5 + tot * 0.5), clair, 0.82 + tot * 0.4 + r * 0.08, passe);
+    q('dunes', lisse(0.34, 0.8, tot) * 0.62 * Math.min(1.2, L.sable + 0.3), clair, 0.9 + tot * 0.22, -passe);
+    q('tempete', lisse(0.5, 1, tot) * (0.45 + tot * 0.55) + tempete * 0.3, clair, 0.8 + tot * 0.34 + r * 0.1, passe * 0.6);
     // Ce qui chante : le vent dans ce qu'il rencontre. Il monte avec la force, et il n'est jamais deux fois à la même hauteur.
     ['chant', 'fil'].forEach((nom, i) => {
       const w = this.voixT[i];
@@ -256,7 +256,7 @@ export class Audio {
       q(nom, lisse(0.28 + i * 0.1, 0.85, tot) * (i ? 0.4 : 0.6) * L.chant * (0.4 + 0.6 * Math.sin(t * (0.19 + i * 0.13) + i * 2) ** 2), 0, w.v * (0.84 + tot * 0.34), w.pan, 1.1);
     });
     // Derrière un mur : le hurlement au loin, et plus rien d'autre.
-    q('abri', ab * (0.2 + tot * 0.75) * (1 - silence), 1100 + tot * 1600, 0.94 + tot * 0.1);
+    q('abri', ab * (0.2 + tot * 0.75) * (1 - silence) * Math.min(1, vol * 2.4), 1100 + tot * 1600, 0.94 + tot * 0.1);
     q('rugit', tempete * 0.5 + approche * 0.42, 240 + (tempete + approche) * 260, 0.46 + tempete * 0.1, 0, 0.9);
 
     this.regler(this.grave.g.gain, (0.04 + tot * 0.14) * L.grave + tempete * 0.08, 0.6);
@@ -265,7 +265,8 @@ export class Audio {
     this.regler(this.sable.p.pan, R.pan, 0.4);
 
     // La nappe monte avec la route : au bout du monde, elle est presque une menace.
-    this.regler(this.gN.gain, (0.012 + avance * 0.03) * (1 - tempete * 0.7) * (1 - silence * 0.5) * (1 + camp * 0.8), 2.5);
+    const accalmie = 1 - lisse(0.08, 0.3, tot);
+    this.regler(this.gN.gain, (0.012 + avance * 0.03) * (1 - tempete * 0.7) * (1 - silence * 0.5) * (1 + camp * 0.8) * (1 + accalmie * (1 - approche) * 0.6), 2.5);
     this.regler(this.lpN.frequency, 280 + 280 * (0.5 + 0.5 * Math.sin(t * 0.09)) + avance * 500, 3);
     if (t > this.chord) { this.chord = t + hasard(16, 34); this.accord(); }
 
@@ -274,13 +275,13 @@ export class Audio {
       this.feuSuite = t + hasard(0.04, 0.34);
       this.grain({ f: hasard(1400, 5000), q: 5, g: hasard(0.01, 0.05) * camp, d: hasard(0.006, 0.03), pan: hasard(-0.2, 0.2), rev: 0.1 });
     }
-    if (L.bruit && t > this.bruitSuite && tempete < 0.3 && combat < 0.3) { this.bruitSuite = t + L.tous * hasard(0.5, 1.6); this.bruitLieu(L.bruit); }
+    if (L.bruit && t > this.bruitSuite && tempete < 0.3 && combat < 0.3) { this.bruitSuite = t + L.tous * hasard(0.5, 1.6) * (1 - accalmie * 0.55); this.bruitLieu(L.bruit); }
 
-    // Le piano ne joue que si rien d'autre ne parle.
-    if (tempete < 0.2 && combat < 0.2 && t > this.prochaine) {
+    // Le piano ne joue que si rien d'autre ne parle. Dans un calme, il ose ; dans celui qui précède un furvent, il se tait.
+    if (tempete < 0.2 && combat < 0.2 && approche < 0.02 && t > this.prochaine) {
       const g = this.gamme, n = 1 + Math.floor(Math.random() * 3), rc = camp > 0.5 ? this.racine / 1.5 : this.racine;
       for (let i = 0; i < n; i++) this.note(rc * Math.pow(2, g[Math.floor(Math.random() * g.length)] / 12), 0.06 + Math.random() * 0.06, 4.5, this.rev, 0.3, i * hasard(0.34, 0.74));
-      this.prochaine = t + hasard(7, 22);
+      this.prochaine = t + hasard(7, 22) * (1 - accalmie * 0.5);
     }
     // Le tambour accélère avec le danger.
     const p = Math.max(tempete, combat);

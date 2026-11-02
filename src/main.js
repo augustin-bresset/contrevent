@@ -36,6 +36,7 @@ import { Vent } from './jeu/vent.js';
 import { Horde, formeDuVent } from './jeu/horde.js';
 import { Evenements } from './jeu/evenements.js';
 import { Camp } from './jeu/camp.js';
+import { Detour } from './jeu/detour.js';
 import { R } from './jeu/reglages.js';
 import { Audio } from './audio.js';
 import { Hud } from './hud.js';
@@ -45,7 +46,7 @@ import FabriqueWorker from './monde/fabrique.worker.js?worker&inline';
 const $ = (id) => document.getElementById(id);
 const params = new URLSearchParams(location.search);
 const CLE = 'contrevent-marche';
-const sauvegarde = (() => { try { return params.has('graine') || params.has('s') ? null : JSON.parse(localStorage.getItem(CLE)); } catch { return null; } })();
+const sauvegarde = (() => { try { return params.has('graine') || params.has('s') || params.has('admin') ? null : JSON.parse(localStorage.getItem(CLE)); } catch { return null; } })();
 const graine = +(params.get('graine') || sauvegarde?.graine || Math.floor(Math.random() * 1e6));
 const calme = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const PAGES = 521;
@@ -98,6 +99,8 @@ const terrain = new Terrain(monde, tex, matieres, lignes.texture, tBruit, atmo.u
 const scene = new THREE.Scene(), sceneAir = new THREE.Scene(), sceneOmbre = new THREE.Scene();
 const ombres = new Ombres(renderer, scene, terrain.u.uSoleil.value, terrain.u, sceneOmbre);
 const post = new Post(renderer, terrain.u, tBruit);
+// ?brut : la lumière telle que la calcule la physique, sans la manière peinte. Pour comparer.
+if (params.has('brut')) terrain.u.uPeint.value = 0;
 scene.add(terrain.mesh);
 Object.assign(terrain.u, { tNC: post.uN.tNC, uVentN: post.uN.uVentN, uCouv: post.uN.uCouv });   // le sol lit la carte des nuages pour porter leur ombre
 const semis = new Semis(monde, terrain.u, matieres); scene.add(semis.groupe);
@@ -136,6 +139,7 @@ const rafales = new Rafales(monde, vent); sceneAir.add(rafales.mesh);
 const fDep = +(params.get('s') || 0);
 const horde = new Horde(monde, vent, sauvegarde?.x ?? monde.xRoute(sDepart), sDepart);
 for (const m of horde.membres) m.col = new THREE.Color(m.ton).convertLinearToSRGB();
+const detour = new Detour(monde);
 const hud = new Hud(), audio = new Audio();
 const carte = new Carte(monde);
 
@@ -234,18 +238,24 @@ const touches = new Set();
 const etapes = { marche: false, lire: false, souffle: false, jalons: false, regard: false, vivres: false };
 let cptOmbre = 0, parcouru = 0, piétine = 0, prochaineAideBloc = 0, fumee = 0;
 const meilleur = { d: 1e9, q: null, t: 0 };
+// Le spectateur de l'admin, quand il vole : le relief fin, les ombres et le climat suivent ce qu'il regarde, plus la Horde.
+let spect = null, foyer = horde;
 
 // --- Entrées ---
 const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
 // Le point du sol sous le curseur : on suit le rayon jusqu'à ce qu'il passe sous le relief, puis on affine.
-function versMonde(cx, cy) {
+// `pied` : un rayon qui heurte un mur s'arrête au pied de ce mur, côté joueur, au lieu de passer à travers jusqu'au sol derrière.
+function versMonde(cx, cy, pied = false) {
   ndc.set(cx / innerWidth * 2 - 1, -cy / innerHeight * 2 + 1);
   ray.setFromCamera(ndc, camera);
   const o = ray.ray.origin, d = ray.ray.direction;
   const sol = (t) => o.y + d.y * t - Math.max(0, monde.h(o.x + d.x * t, -(o.z + d.z * t)));
   let t0 = camera.near, t1 = t0;
-  const pas = 2.5, loin = 2600;
-  while (t1 < loin && sol(t1) > 0) { t0 = t1; t1 += pas * Math.max(1, t1 / 200); }
+  const pas = 2.5, loin = 2600, semes = pied ? monde.semesAutour(horde.x, horde.s, 420, true) : null;
+  while (t1 < loin && sol(t1) > 0) {
+    if (pied && monde.heurte(o.x + d.x * t1, -(o.z + d.z * t1), o.y + d.y * t1, semes)) return { x: o.x + d.x * t0, s: -(o.z + d.z * t0) };
+    t0 = t1; t1 += pas * Math.max(1, t1 / 200);
+  }
   if (t1 >= loin) return null;
   for (let i = 0; i < 9; i++) { const m = (t0 + t1) / 2; if (sol(m) > 0) t0 = m; else t1 = m; }
   return { x: o.x + d.x * t1, s: -(o.z + d.z * t1) };
@@ -287,11 +297,12 @@ canvas.addEventListener('pointerdown', (e) => {
   }
   if (etat !== 'marche') return;
   if (e.button === 2) { basculerBloc(); return; }
+  if (scene_) return;     // une scène se regarde : on ne commande rien tant qu'elle dure
   canvas.setPointerCapture?.(e.pointerId);
   const p = versMonde(e.clientX, e.clientY);
   if (!p) return;
   if (ev.clic(p.x, p.s)) return;
-  pression = { t: performance.now(), x: e.clientX, y: e.clientY, p };
+  pression = { t: performance.now(), x: e.clientX, y: e.clientY, p: versMonde(e.clientX, e.clientY, true) || p };
   souris = [e.clientX, e.clientY];
 });
 canvas.addEventListener('pointermove', (e) => {
@@ -311,10 +322,15 @@ addEventListener('pointerup', (e) => {
 addEventListener('pointercancel', (e) => { leverDoigt(e); pression = null; mene = false; });
 // Un clic bref pose un point au bout du chemin ; sur un point déjà posé, il le retire.
 function poserJalon(p) {
+  if (scene_) return;
+  if (ev.defense()) { if (!etapes.defense) { etapes.defense = true; hud.aide('Pendant un combat, on ne trace plus : le clic sert à frapper.', 5); } return; }
   const i = chemin.findIndex((q) => Math.hypot(q.x - p.x, q.s - p.s) < (TACTILE ? 9 : 5));
   if (i >= 0) { chemin.splice(i, 1); return; }
   if (chemin.length >= MAX_JALONS) return;
-  chemin.push({ x: Math.max(10, Math.min(monde.W - 10, p.x)), s: Math.max(32, Math.min(monde.L - 6, p.s)) });
+  // Jamais dans un mur : le point glisse à son pied.
+  const q = monde.degager(Math.max(10, Math.min(monde.W - 10, p.x)), Math.max(32, Math.min(monde.L - 6, p.s)), 5);
+  if (!q) return;
+  chemin.push(q);
   if (chemin.length === 2 && !etapes.jalons) { etapes.jalons = true; hud.aide(TACTILE ? 'Le chemin s’allonge à chaque toucher. Effacer retire le dernier point ; un appui long, tout le chemin.' : 'Le chemin s’allonge à chaque clic. Retour efface le dernier point.', 7); }
 }
 canvas.addEventListener('contextmenu', (e) => e.preventDefault());
@@ -471,6 +487,9 @@ const COUL_ENNEMI = { r: 0.62, g: 0.12, b: 0.09 };
 const vF = new THREE.Vector3(), vP = new THREE.Vector3();
 let avant = performance.now(), temps = 0, cumul = 0, images = 0;
 
+// Ce que le vent donne à voir : presque rien quand il dort.
+const ventVu = () => 0.26 + 0.74 * Math.min(1, Math.max(0, (horde.force - 0.15) / 0.75));
+
 function commande(dt) {
   const k = (c) => touches.has(c);
   const dx = (k('KeyD') || k('ArrowRight') ? 1 : 0) - (k('KeyA') || k('KeyQ') || k('ArrowLeft') ? 1 : 0);
@@ -483,15 +502,21 @@ function commande(dt) {
 
   if (dx || ds) { mene = false; chemin = []; cible = null; cmd.dx = dx; cmd.ds = ds; cmd.actif = true; }
   else if (cible) {
-    const a = cible.x - horde.x, b = cible.s - horde.s;
-    const reste = Math.hypot(a, b);
-    if (reste < (mene ? 1.5 : 3.5)) { if (!mene) chemin.shift(); }
+    const loin = Math.hypot(cible.x - horde.x, cible.s - horde.s);
+    if (loin < (mene ? 1.5 : 3.5)) { if (!mene) chemin.shift(); }
     else {
-      cmd.dx = a; cmd.ds = b; cmd.actif = true;
-      // Un point posé dans la roche ne se rejoint jamais : passé quelques secondes sans gagner de terrain, on le saute.
+      // Ce qui ne se franchit pas, on le contourne : la Horde vise le prochain coude du détour.
+      const p = detour.vers(horde.x, horde.s, cible, temps);
+      cmd.dx = p.x - horde.x; cmd.ds = p.s - horde.s; cmd.actif = true;
       if (!mene) {
-        if (reste < meilleur.d - 0.5 || meilleur.q !== chemin[0]) { meilleur.d = reste; meilleur.q = chemin[0]; meilleur.t = temps; }
-        else if (temps - meilleur.t > 5) { chemin.shift(); meilleur.q = null; }
+        // Un point qu'aucun chemin ne rejoint : on va au plus près, puis on passe au suivant.
+        if (p.auBout) {
+          chemin.shift(); meilleur.q = null;
+          if (!etapes.injoignable) { etapes.injoignable = true; hud.aide('Aucun passage ne mène à ce point : la Horde s’en est approchée au plus près.', 6); }
+        }
+        // Passé quelques secondes sans gagner de terrain sur le détour, on le saute aussi.
+        else if (p.reste < meilleur.d - 0.5 || meilleur.q !== chemin[0]) { meilleur.d = p.reste; meilleur.q = chemin[0]; meilleur.t = temps; }
+        else if (temps - meilleur.t > 8) { chemin.shift(); meilleur.q = null; }
       }
     }
   }
@@ -561,7 +586,7 @@ function poserUniformes(dt) {
   u.uNavireO.value.set(n.x + 12, n.s - 40, 118, n.p > 0 ? Math.min(1, n.p * 1.5) : 0);
   const eR = lisseR();
   // La brume ne s'ouvre jamais au-delà de ce qui existe : le joueur ne voit pas le monde se construire.
-  u.uBrouillard.value = Math.min(2400, monde.vu(horde.s) / 1.25);
+  u.uBrouillard.value = Math.min(2400, monde.vu(foyer.s) / 1.25);
   u.uSv.value = horde.s / monde.L;
   u.uRemousT.value = lignes.commun.uRemous.value;
 
@@ -588,12 +613,12 @@ function poserUniformes(dt) {
   fleches();
 
   poussiere.u.tPos.value = lignes.gpu.getCurrentRenderTarget(lignes.varPos).texture;
-  poussiere.u.uForce.value = (0.3 + m * 0.5) * (reve > 0.5 ? 0.35 : 1);
+  poussiere.u.uForce.value = (0.3 * ventVu() + m * 0.5) * (reve > 0.5 ? 0.35 : 1);
   poussiere.u.uCouleur.value.set(clair.r, clair.g * mix(1, 0.74, m), clair.b * mix(1, 0.5, m));
 
   repere.visible = mene && !!cible && etat === 'marche';
   if (repere.visible) { repere.position.set(cible.x, Math.max(0, monde.h(cible.x, cible.s)) + 0.2, -cible.s); repere.scale.setScalar(1 + 0.08 * Math.sin(temps * 5)); }
-  jalons.maj(horde.x, horde.s, etat === 'marche' ? chemin : [], temps);
+  jalons.maj(horde.x, horde.s, etat === 'marche' ? chemin : [], temps, etat === 'marche' && !mene && chemin.length ? detour.trace() : []);
   fil.mesh.visible = lisseR() < 0.5;
   if (j.balise) {
     j.balise.vie -= dt;
@@ -610,7 +635,7 @@ const CL = { trouble: 1, teinte: new THREE.Color(1, 1, 1), voile: 0, soleil: 1, 
 const TEINTES = Object.fromEntries(Object.entries(CLIMATS).map(([k, c]) => [k, new THREE.Color(c.teinte).convertLinearToSRGB()]));
 let climatPret = false;
 function climat(dt, m) {
-  const c = monde.contreeA(horde.s + 260), q = CLIMATS[c.id] || CLIMATS.amont, k = climatPret ? 1 - Math.exp(-dt * 0.25) : 1;
+  const c = monde.contreeA(foyer.s + (foyer === horde ? 260 : 0)), q = CLIMATS[c.id] || CLIMATS.amont, k = climatPret ? 1 - Math.exp(-dt * 0.25) : 1;
   climatPret = true;
   for (const n of ['trouble', 'voile', 'soleil', 'brume', 'expo']) CL[n] += (q[n] - CL[n]) * k;
   CL.teinte.lerp(TEINTES[c.id] || TEINTES.amont, k);
@@ -650,6 +675,7 @@ function fleches() {
 function lisseR() { return regard * regard * (3 - 2 * regard); }
 
 function cadrer(dt) {
+  if (spect?.actif) { spect.poser(camera); return spect.foyer; }
   zoom = vers(zoom, zoomV * (j.camp ? 0.74 : 1) * (1 + j.intensite * 0.1), dt, 1.1);
   // Assaillants en vue : la caméra monte et remet la Horde au milieu de l'image, pour qu'on voie ce qui vient de derrière.
   alerteV = vers(alerteV, ev.ennemis.length || ev.corroyeur ? 1 : 0, dt, 2.2);
@@ -703,6 +729,9 @@ function boucle(now) {
   requestAnimationFrame(boucle);
   const brut = Math.min(0.05, (now - avant) / 1000); avant = now;
   const dt = brut * vitesseJeu;
+  const vol = !!spect?.actif;
+  if (vol) spect.maj(brut);
+  foyer = vol ? spect.foyer : horde;
 
   // La qualité se règle seule : mieux vaut un dessin un peu moins fin qu'un vent qui saccade.
   cumul += brut; images++;
@@ -714,7 +743,7 @@ function boucle(now) {
 
   temps += dt;
   // Le temps : plusieurs pas de jeu par image, jamais plus quand quelque chose menace.
-  const pasJeu = etat === 'marche' && !ev.actifs() && !regardCible && !ev.nav ? accel : 1;
+  const pasJeu = etat === 'marche' && !ev.actifs() && !ev.presage && !regardCible && !ev.nav ? accel : 1;
   hud.temps(accel, pasJeu);
   if (etat === 'marche' && scene_) {
     // Le temps de la scène ne compte pas : le Physalis seul poursuit sa manœuvre.
@@ -753,31 +782,40 @@ function boucle(now) {
   if (Math.floor(horde.s / MONDE.tranche) !== monde.k) reclamer(horde.s);
   deballer(); monde.monter();
 
-  monuments.maj(horde.s, 3000, dt);
-  semis.maj(horde.x, horde.s + 40);
+  monuments.maj(foyer.s, 3000, dt);
+  semis.maj(foyer.x, foyer.s + 40);
   poserUniformes(dt);
   lignes.uSim.uVitesse.value = 26;
+  // L'obstacle que la Horde fait au vent : aussi large qu'elle, plus serré quand elle fait bloc.
+  let ecartH = 0;
+  for (const q of horde.membres) if (q.vivant) ecartH = Math.max(ecartH, Math.hypot(q.x - horde.x, q.s - horde.s));
+  lignes.uSim.uHordeR.value = vers(lignes.uSim.uHordeR.value, Math.min(16, Math.max(4, ecartH + 2.5)), dt, 2);
+  lignes.uSim.uNbFilets.value = filets.mesh.geometry.instanceCount;
   lignes.uSim.uEtale.value = vers(lignes.uSim.uEtale.value, m > 0.02 ? 1 : 0, dt, 1.4);
-  lignes.maj(dt, temps, horde.x, horde.s + 150, horde.x, horde.s);
+  lignes.maj(dt, temps, foyer.x, foyer.s + 150, horde.x, horde.s);
   filets.maj(dt, innerWidth, innerHeight, prActuel);
   filets.u.uFrontF.value.set(vent.front.a, vent.front.presence > 0 ? Math.max(0, Math.min(1, (vent.front.a + camera.position.z + 60) / 200)) : 0);
-  filets.u.uChaud.value = m; filets.u.uNuit.value = nuit; filets.u.uForceF.value = (1 - reve) * (1 - lisseR() * 0.72) * (1 + carteV * 1.8);
+  filets.u.uChaud.value = m; filets.u.uNuit.value = nuit; filets.u.uForceF.value = (1 - reve) * (1 - lisseR() * 0.72) * (1 + carteV * 1.8) * ventVu();
   fx.maj(dt); foudre.maj(dt);
   const centre = cadrer(dt);
   // Les pierres et les tours ne bougent pas : une image sur quatre suffit à la grande carte. La petite porte les corps.
-  if ((cptOmbre = (cptOmbre + 1) % 4) === 0) ombres.majLarge(mix(camX, centre.x - vF.x * 40, lisseR()), camH, mix(camS + 240, horde.s + 300, lisseR()));
+  if ((cptOmbre = (cptOmbre + 1) % 4) === 0) {
+    if (vol) ombres.majLarge(foyer.x, Math.max(0, monde.h(foyer.x, foyer.s)), foyer.s);
+    else ombres.majLarge(mix(camX, centre.x - vF.x * 40, lisseR()), camH, mix(camS + 240, horde.s + 300, lisseR()));
+  }
   if (NIVEAUX[niveau].ombreP) ombres.majProche(horde.x, Math.max(0, monde.h(horde.x, horde.s)), horde.s + 26);
   camera.getWorldDirection(vF);
   // La maille la plus fine va où est le regard : sous les pieds de la Horde, ou devant la caméra quand elle descend.
-  terrain.maj(mix(centre.x, camera.position.x + vF.x * 24, lisseR()), mix(centre.s, -camera.position.z - vF.z * 24, lisseR()));
+  const eC = vol ? 1 : lisseR();
+  terrain.maj(mix(centre.x, camera.position.x + vF.x * 24, eC), mix(centre.s, -camera.position.z - vF.z * 24, eC));
   souffle.maj(dt, temps, camera.position.x + vF.x * 70, -camera.position.z - vF.z * 70, lisseR(), camera.aspect);
   oiseaux.maj(dt, temps, horde.x, horde.s, camH, (horde.vit('tourse') ? 1 : 0) + (horde.vit('darbon') ? 1 : 0));
   oiseaux.u.uNuit.value = nuit;
 
-  const eR = lisseR(), mTemp = vent.masque(horde.s, horde.x) * vent.front.presence;
-  herbe.maj(mix(camX, centre.x - vF.x * 40, eR), mix(camS + 40, -(camera.position.z + vF.z * 110), eR), horde.x, horde.s, vent.respir, monde.contreeA(horde.s).herbe > 0 || monde.contreeA(horde.s + 200).herbe > 0 || monde.contreeA(horde.s - 120).herbe > 0, eR);
+  const eR = vol ? 1 : lisseR(), mTemp = vent.masque(horde.s, horde.x) * vent.front.presence;
+  herbe.maj(mix(camX, centre.x - vF.x * 40, eR), mix(camS + 40, -(camera.position.z + vF.z * 110), eR), horde.x, horde.s, vent.respir, monde.contreeA(foyer.s).herbe > 0 || monde.contreeA(foyer.s + 200).herbe > 0 || monde.contreeA(foyer.s - 120).herbe > 0, eR);
   rafales.u.uCouleur.value.setRGB(clair.r, clair.g * mix(1, 0.72, mTemp), clair.b * mix(1, 0.46, mTemp));
-  rafales.maj(dt, camX, camS + 90, camH, horde.force, 0.7 + Math.min(1.6, horde.force) + mTemp * 2 + vent.rafale * 6);
+  rafales.maj(dt, vol ? foyer.x : camX, vol ? foyer.s : camS + 90, vol ? Math.max(0, monde.h(foyer.x, foyer.s)) : camH, horde.force, 0.7 + Math.min(1.6, horde.force) + mTemp * 2 + vent.rafale * 6);
   rafales.mesh.visible = nuit < 0.5 && reve < 0.5;
   tornades.maj(temps, ev.colonne ? [...ev.chrones.slice(0, 3), ev.colonne] : ev.chrones);
   eclair *= Math.exp(-dt * 8);
@@ -822,7 +860,7 @@ function boucle(now) {
     const px = (vP.x + 1) / 2 * innerWidth + 74, py = (1 - vP.y) / 2 * innerHeight - 26;
     hud.roue(horde.souffle, px, py, horde.souffle < 0.985);
   } else if (etat === 'fin') hud.roue(1, 0, 0, false);
-  audio.maj(brut, { force: horde.force, tempete: j.intensite, combat: j.combat, camp: feu, silence: reve, abri: horde.abri, relief: monde.contreeA(horde.s).relief, avance: horde.s / monde.L, approche: vent.front.presence > 0 ? Math.max(0, 1 - Math.max(0, vent.front.a - horde.s) / 1500) : 0 });
+  audio.maj(brut, { force: horde.force, rafale: vent.rafale, tempete: j.intensite, combat: j.combat, camp: feu, silence: reve, abri: horde.abri, relief: monde.contreeA(horde.s).relief, avance: horde.s / monde.L, approche: vent.front.presence > 0 ? Math.max(0, 1 - Math.max(0, vent.front.a - horde.s) / 1500) : ev.presage ? 0.03 + ev.presage.monte * 0.7 : 0 });
 }
 
 // --- Démarrage ---
@@ -844,6 +882,23 @@ addEventListener('keydown', function entree(e) {
 if (params.has('direct')) { demarrer(fDep > 0); regard = 0; }
 requestAnimationFrame(boucle);
 
+// Le mode admin n'existe qu'en local : la construction du site le retire.
+if (import.meta.env.DEV && params.has('admin')) {
+  import('./admin.js').then(({ ouvrirAdmin }) => ouvrirAdmin({ peint: terrain.u.uPeint,
+    j, horde, monde, ev, vent, canvas, versMonde, graine, camera,
+    vite(v) { vitesseJeu = v; },
+    voler(s) { spect = s; },
+    aller(x, s) {
+      const dx = x - horde.x, ds = s - horde.s;
+      horde.x = x; horde.s = s;
+      for (const m of horde.membres) { m.x += dx; m.s += ds; m.emporte = false; }
+      camX = x; camS = s + 34; camH = Math.max(0, monde.h(x, s)); fil.dx = x; fil.ds = s;
+      chemin = []; cible = null; mene = false; pression = null; quitterRegard();
+      ev.plan = ev.plan.filter((p) => p.f > s / monde.L);
+      reclamer(s);
+    },
+  }));
+}
 if (params.has('debug')) window.__j = {
   j, horde, vent, ev, monde, get etat() { return etat; }, renderer, post,
   vite(v) { vitesseJeu = v; }, camera, versMonde, herbe, rafales, tornades, poussiere, semis, lignes, terrain, souffle, eclats, scene, sceneAir, atmo, ombres, fil, reclamer, tp(f) { horde.s = f * monde.L; horde.x = monde.xRoute(horde.s); reclamer(horde.s); camX = horde.x; camS = horde.s + 34; fil.dx = horde.x; fil.ds = horde.s; ev.plan = ev.plan.filter((p) => p.f > f); },

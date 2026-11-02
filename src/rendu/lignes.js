@@ -27,7 +27,7 @@ export class Lignes {
     const v = gpu.addVariable('tPos', /* glsl */`
       uniform float uTemps, uDt, uVitesse, uFenetre;
       uniform vec2 uCentre, uHorde;
-      uniform float uHordeR, uEtale;
+      uniform float uHordeR, uEtale, uNbFilets;
       ${GLSL_VENT}
       float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
       void main() {
@@ -36,9 +36,21 @@ export class Lignes {
         float id = hash(uv), duree = mix(2.2, 6.5, hash(uv + 0.37));
         float ph0 = (uTemps - uDt) / duree + id, ph1 = uTemps / duree + id;
         vec2 w = ventIci(e.xy);
-        // La Horde est un petit obstacle : le vent s'ouvre devant elle.
-        vec2 dh = e.xy - uHorde; float qh = dot(dh, dh) / (uHordeR * uHordeR);
-        w += dh / uHordeR * 0.9 * exp(-qh);
+        // La Horde est un obstacle : le vent s'ouvre devant elle, file serré sur ses flancs, et tourbillonne dans son dos.
+        vec2 wh = ventIci(uHorde); float vh = length(wh);
+        vec2 U = vh > 1e-3 ? wh / vh : vec2(0.0, -1.0), N = vec2(-U.y, U.x);
+        vec2 dh = e.xy - uHorde; float r2 = max(dot(dh, dh), 1e-4), a2 = uHordeR * uHordeR;
+        vec2 rh = dh * inversesqrt(r2);
+        // L'écoulement autour d'un cylindre, qui s'efface au loin ; dedans, on est poussé dehors.
+        float k = a2 / max(r2, a2 * 0.8) * exp(-r2 / (a2 * 16.0));
+        w += (w - 2.0 * dot(w, rh) * rh) * k;
+        if (r2 < a2) w += rh * vh * (1.0 - r2 / a2) * 1.5;
+        // Le sillage : le vent y tombe, et se met à battre d'un flanc à l'autre.
+        float lon = dot(dh, U), lat = dot(dh, N);
+        if (lon > 0.0) {
+          float sil = exp(-lat * lat / (a2 * 1.6)) * exp(-lon / (uHordeR * 7.0)) * smoothstep(0.0, uHordeR, lon);
+          w = w * (1.0 - 0.55 * sil) + N * vh * 0.75 * sil * sin(lon / uHordeR * 1.4 - uTemps * 2.6);
+        }
         vec2 p = e.xy + w * uVitesse * uDt;
         // Le furvent déborde la fenêtre : les filets s'y sèment jusqu'à perte de vue, serrés près de la Horde, là où l'œil les voit de près.
         float F = uFenetre * (1.0 + uEtale * 3.2);
@@ -48,13 +60,18 @@ export class Lignes {
           float c = floor(ph1);
           vec2 q = vec2(hash(uv + c * 0.071), hash(uv.yx + c * 0.113)) * 2.0 - 1.0;
           p = uCentre + sign(q) * pow(abs(q), vec2(1.0 + uEtale * 1.1)) * 0.5 * F;
+          // Une part des filets visibles naît en amont de la Horde, dans une large bande : ils arrivent sur elle de loin,
+          // et la densité monte doucement à son approche, sans que rien ne surgisse devant elle.
+          float idx = floor(gl_FragCoord.y) * resolution.x + floor(gl_FragCoord.x);
+          if (idx < uNbFilets && hash(uv + c * 0.029) < 0.18)
+            p = uHorde - U * (uHordeR * 2.0 + 20.0 + 150.0 * abs(q.x)) + N * q.y * (uHordeR * 3.0 + 25.0 + 40.0 * abs(q.x));
           gl_FragColor = vec4(p, p);
         } else gl_FragColor = vec4(p, e.xy);
       }`, depart);
     gpu.setVariableDependencies(v, [v]);
     Object.assign(v.material.uniforms, this.commun, {
       uTemps: { value: 0 }, uDt: { value: 1 / 60 }, uVitesse: { value: 26 }, uFenetre: { value: FENETRE },
-      uCentre: { value: this.centre }, uHorde: { value: new THREE.Vector2() }, uHordeR: { value: 8 }, uEtale: { value: 0 },
+      uCentre: { value: this.centre }, uHorde: { value: new THREE.Vector2() }, uHordeR: { value: 8 }, uEtale: { value: 0 }, uNbFilets: { value: 3600 },
     });
     const err = gpu.init();
     if (err) throw new Error(err);

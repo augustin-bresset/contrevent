@@ -5,7 +5,11 @@ export const NB_REMOUS = 8;
 export const GLSL_ONDE = /* glsl */`
 #ifndef ONDE_FRONT
 #define ONDE_FRONT
-float ondeFront(float x) { return 96.0 * sin(x * 0.0017 + 1.3) + 54.0 * sin(x * 0.0043 + 4.1) + 23.0 * sin(x * 0.0097 + 2.2); }
+float ondeFront(float x, float a) {
+  return 96.0 * sin(x * 0.0017 + 1.3) * (1.0 + 0.45 * sin(a * 0.0041 + 0.4))
+    + 54.0 * sin(x * 0.0043 + 4.1 + a * 0.0006) * (1.0 + 0.5 * sin(a * 0.0067 + 2.0))
+    + 23.0 * sin(x * 0.0097 + 2.2 - a * 0.001) * (1.0 + 0.5 * sin(a * 0.011 + 1.1));
+}
 #endif`;
 
 // Le vent de jeu, identique à `ventInstant` dans jeu/vent.js.
@@ -19,7 +23,7 @@ uniform vec4 uNavire;                   // x, s, rayon, présence
 uniform float uRespir;                  // rafales globales
 
 float masqueTempete(vec2 p) {
-  float o = ondeFront(p.x), s = p.y;
+  float o = ondeFront(p.x, uFront.x), s = p.y;
   return smoothstep(uFront.x + o - 34.0, uFront.x + o + 34.0, s) * (1.0 - smoothstep(uFront.y + o - 90.0, uFront.y + o + 90.0, s));
 }
 vec2 ventIci(vec2 p) {
@@ -52,7 +56,18 @@ uniform sampler2D tPal, tBruit, tCiel, tL;
 uniform vec2 uAnneau;                     // le terrain chargé : il tourne sur lui-même, s modulo la longueur de l'anneau
 uniform vec3 uFrontT, uSoleil, uSoleilCol, uFeu;
 uniform float uTemps, uNuit, uBrouillard, uReve, uSv, uEclair, uBande, uBrume, uBrumeH;
+uniform float uPeint;                     // la manière : 0 la lumière telle quelle, 1 la lumière peinte
 vec3 palette(int col, float s) { return texture2D(tPal, vec2((float(col) + 0.5) / 7.0, s)).rgb; }
+float lumi(vec3 c) { return dot(c, vec3(0.3, 0.59, 0.11)); }
+// La teinte d'une colonne de la palette, sans sa valeur : ce qu'on prête aux choses pour les accorder au pays.
+vec3 teinte(int col, float dv) { vec3 c = palette(col, dv); c *= c; return c / max(lumi(c), 0.02); }
+// La lumière peinte : un passage franc de l'ombre au jour, comme un aplat posé au pinceau, puis un modelé doux.
+float rampe(float nl) { return mix(nl, smoothstep(0.0, 0.2, nl) * (0.66 + 0.34 * nl), uPeint); }
+// Les ombres prennent la couleur de la contrée plutôt que celle d'un ciel photographié.
+// Et elles sont plus claires : une ombre peinte se lit, elle ne bouche pas.
+vec3 ombreTeinte(vec3 amb, float dv) { return mix(amb, lumi(amb) * mix(vec3(1.0), teinte(0, dv), 0.6) * 1.4, uPeint * 0.75); }
+// Les couleurs propres des choses s'accordent au pays : moins franches, tirées vers sa lumière.
+vec3 accorder(vec3 alb, float dv) { float y = lumi(alb); return mix(alb, mix(vec3(y), y * teinte(1, dv), 0.5), uPeint * 0.38); }
 float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float bruit(vec2 p) { return texture2D(tBruit, p / 256.0).r; }
 float fbm3(vec2 p) {
@@ -60,7 +75,7 @@ float fbm3(vec2 p) {
   return 0.55 * a.r + 0.3 * b.g + 0.15 * texture2D(tBruit, (p * 4.3 + 7.7) / 256.0).b;
 }
 float tempeteA(float x, float s) {
-  float o = ondeFront(x);
+  float o = ondeFront(x, uFrontT.x);
   return smoothstep(uFrontT.x + o - 50.0, uFrontT.x + o + 90.0, s) * (1.0 - smoothstep(uFrontT.y + o - 90.0, uFrontT.y + o + 90.0, s)) * uFrontT.z;
 }
 const vec3 BLANC_FIN = vec3(1.9, 1.88, 1.85);
@@ -88,9 +103,12 @@ float soleilRelief(vec3 P, float haut) { return mix(texture2D(tL, vec2(P.x, -P.z
 // Une surface mate ordinaire : pour tout ce qui n'a pas de raison d'être plus compliqué.
 vec3 eclairer(vec3 alb, vec3 n, vec3 P, float rug, float vis, float occl) {
   vec3 v = normalize(cameraPosition - P);
-  float t = tempeteA(P.x, -P.z), nl = max(dot(n, uSoleil), 0.0);
+  float dv = clamp(-P.z / uBande, 0.0, 1.0);
+  alb = accorder(alb, dv);
+  vis = mix(vis, smoothstep(0.25, 0.75, vis), uPeint);
+  float t = tempeteA(P.x, -P.z), nl = rampe(max(dot(n, uSoleil), 0.0));
   vec3 sun = uSoleilCol * vis * (1.0 - 0.94 * t);
-  vec3 amb = cielDiffus(n) * occl * (1.0 - 0.7 * t);
+  vec3 amb = ombreTeinte(cielDiffus(n), dv) * occl * (1.0 - 0.7 * t);
   // Le sol clair renvoie le soleil par en dessous : c'est lui qui éclaire les faces à l'ombre.
   vec3 rebond = palette(1, clamp(-P.z / uBande, 0.0, 1.0)) * uSoleilCol * 0.09 * (0.6 - 0.4 * n.y) * occl;
   vec3 c = alb * (sun * nl + amb + rebond);
@@ -99,7 +117,8 @@ vec3 eclairer(vec3 alb, vec3 n, vec3 P, float rug, float vis, float occl) {
     vec3 d = vec3(uFeu.x - P.x, 1.0, -uFeu.y - P.z); float l2 = dot(d, d);
     c += alb * vec3(1.0, 0.5, 0.2) * uFeu.z * max(dot(n, normalize(d)), 0.0) * 260.0 / (l2 + 40.0) * (0.92 + 0.08 * sin(uTemps * 11.0));
   }
-  c += ggx(n, v, uSoleil, rug, vec3(0.04), sun);
+  // Une matière mate : le reflet du soleil ne fait qu'effleurer.
+  c += ggx(n, v, uSoleil, rug, vec3(0.04), sun) * (1.0 - 0.75 * uPeint);
   return mix(c, BLANC_FIN, uReve);
 }`;
 
@@ -118,7 +137,10 @@ vec3 glace(vec3 P, vec3 n, float ao, float ar, float vis) {
   c += vec3(0.16, 0.5, 0.66) * uSoleilCol * vis * pow(max(dot(-V, uSoleil), 0.0), 4.0) * 0.5;      // le soleil qui la traverse
   c += vec3(0.8, 0.95, 1.0) * smoothstep(0.58, 0.9, ar) * (amb * 0.7 + sun * 0.16);                // les arêtes accrochent
   c = mix(c, cielReflet(reflect(-V, n), 0.04), clamp(0.03 + fr, 0.0, 1.0));
-  c += ggx(n, V, uSoleil, 0.16, vec3(0.03), sun);
+  c += ggx(n, V, uSoleil, 0.16, vec3(0.03), sun) * (1.0 - 0.6 * uPeint);
+  // Peinte, la glace perd son bleu de bonbon : une pierre pâle, à peine froide, que la contrée colore.
+  float dv = clamp(-P.z / uBande, 0.0, 1.0);
+  c = mix(c, lumi(c) * mix(vec3(0.82, 0.93, 1.0), teinte(1, dv), 0.3) * 1.08, uPeint * 0.62);
   return mix(c, BLANC_FIN, uReve);
 }`;
 

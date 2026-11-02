@@ -130,13 +130,21 @@ export class Semis {
         }`,
       fragmentShader: /* glsl */`
         precision highp float; varying vec3 vP, vC; varying float vB, vH;
+        uniform sampler2D tH;
         ${GLSL_COMMUN}
         ${GLSL_OMBRE}
         void main() {
           vec3 n = normalize(cross(dFdx(vP), dFdy(vP)));
           if (n.y < 0.0) n = -n;
           n = normalize(n + vec3(0.0, 0.9, 0.0));
-          vec3 alb = mix(vC * vC, vec3(0.07, 0.05, 0.035), vB) * (0.7 + 0.6 * hash(floor(vP.xz * 3.0)));
+          // Peinte, la broussaille prend la lumière du versant qui la porte : à l'ombre avec lui.
+          if (uPeint > 0.01) {
+            vec2 q = vec2(vP.x, -vP.z);
+            float hx = texture2D(tH, (q + vec2(2.0, 0.0)) / uAnneau).r - texture2D(tH, (q - vec2(2.0, 0.0)) / uAnneau).r;
+            float hz = texture2D(tH, (q + vec2(0.0, 2.0)) / uAnneau).r - texture2D(tH, (q - vec2(0.0, 2.0)) / uAnneau).r;
+            n = normalize(mix(n, normalize(vec3(-hx, 4.0, hz)), uPeint * 0.75));
+          }
+          vec3 alb = mix(vC * vC, vec3(0.07, 0.05, 0.035), vB) * (0.7 + 0.6 * hash(floor(vP.xz * 3.0)) * (1.0 - 0.6 * uPeint)) * (1.0 - 0.3 * uPeint);
           vec3 c = eclairer(alb, n, vP, 0.7, soleilVu(vP, gl_FragCoord.xy) * soleilRelief(vP, 0.0), mix(0.4, 1.0, clamp(vH, 0.0, 1.0)));
           gl_FragColor = vec4(c, 1.0);
         }`,

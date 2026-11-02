@@ -15,11 +15,21 @@ Chaque push sur `main` publie le site sur https://augustin-bresset.github.io/con
 
 L'adresse accepte `?graine=34` pour rejouer un monde, et `?debug` pour exposer `window.__j`.
 
+`npm run admin` ouvre le jeu en mode admin, pour vérifier la carte : la Horde est invincible, et un panneau téléporte vers
+chaque lieu ou contrée, lance les événements et règle le vent. Alt + clic téléporte là où l'on vise, et la partie n'écrase
+pas la sauvegarde. F ouvre le spectateur : la caméra vole librement pendant que la partie continue. Un clic capture la souris,
+qui tourne le regard dans tous les sens (Échap la relâche) ; ZQSD avance, Espace et C montent et descendent, Maj accélère et
+la molette règle l'allure. H amène la Horde sous le centre de l'image, P fige le temps. `?admin` n'agit que sur le serveur de développement : la construction du site retire ce mode.
+
+La lumière est peinte plutôt que photographique : un passage franc de l'ombre au jour, des ombres claires teintées par la
+contrée, des matières mates, des couleurs accordées à la palette du pays et un trait d'encre sur les silhouettes proches.
+`?brut` affiche la lumière physique d'origine, pour comparer ; le panneau admin a la même bascule.
+
 ## Jouer
 
 | Geste | Effet |
 |---|---|
-| Clic bref | Pose un point de passage ; les suivants s'enchaînent. Sur un point déjà posé, le retire. Marche aussi sur la bande du monde |
+| Clic bref | Pose un point de passage ; les suivants s'enchaînent. Sur un point déjà posé, le retire. Sur un mur, le point glisse à son pied. Si un mur ou une falaise barre la ligne droite, la Horde fait le détour (tracé en pointillé) ; un point que rien ne rejoint est atteint au plus près, puis sauté. Marche aussi sur la bande du monde. Pendant un combat ou une scène, on ne trace pas |
 | Maintenir le clic | Golgoth marche vers le point visé, et le chemin prévu est oublié. ZQSD, WASD et les flèches marchent aussi |
 | Retour, Suppr | Efface le dernier point, ou tout le chemin |
 | Espace, ou clic droit | Fait bloc ou desserre : une bascule, pas une touche à tenir. La Horde est plus lente, mais elle tient dans le vent |
@@ -66,10 +76,20 @@ Le numéro en haut à droite compte les pages à l'envers, de 521 à 0, comme le
 par une fonction de courant, `div(r grad ψ) = 0`, où `r` est la résistance du terrain. Il contourne donc les massifs,
 s'accélère dans les défilés (la porte d'Urle, ou le long détour par la glace) et laisse du calme sous le vent.
 Les lignes à l'écran sont ces mêmes données : elles sont l'information de jeu. Lire le vent, c'est jouer.
+La Horde y fait obstacle : les lignes s'ouvrent devant elle, filent serrées sur ses flancs et battent dans son dos ;
+en bloc, l'obstacle se resserre. Une part des filets naît en amont d'elle, dans une large bande, pour qu'on la voie fendre le courant.
+
+Il a aussi ses heures : de longues accalmies où l'on entend ses pas, des reprises soutenues, de plus en plus rares ou dures
+à mesure qu'on monte. Avant un furvent, il tombe d'abord trop vite, puis il monte sans redescendre jusqu'au mur : l'oreille
+et les formes affichées préviennent avant qu'Oroshi ne le dise. Le son suit la même force, sur une trentaine de décibels.
 
 **Un pays, pas une carte.** La caméra voit l'horizon : la Horde marche en bas de l'image, et le monde se perd dans l'air.
 Le dessin de carte d'origine n'a pas disparu : tenir C fait revenir les courbes de niveau, et le vent ressort.
-Le furvent s'annonce de loin : un mur de sable en volume, sans bords, plus large que tout ce qu'on peut voir, surgit à l'horizon, prend le soleil de côté et avale le jour.
+Le furvent s'annonce de loin : un mur de sable en volume, sans bords, plus large que tout ce qu'on peut voir, paraît sur l'horizon
+dès que le vent remonte, à trois kilomètres. Il traîne au loin, par poussées, puis fond sur la Horde dans les dernières secondes ;
+une fois la tête passée, le corps de la tempête défile au pas du vent. Ses lobes prennent de l'avance
+ou en perdent, ses choux montent le long de la face et roulent en arrière au sommet, des doigts de sable filent devant le pied.
+Sans Oroshi, il reste noyé dans le lointain jusqu'à ce qu'il soit sur nous.
 
 **Le fil rouge.** Golgoth est le traceur : la Horde laisse un fil qui ne s'efface pas. La fin le montre, sur toute la bande.
 

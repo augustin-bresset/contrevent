@@ -43,3 +43,15 @@ export const CHUTE = {
   poursuite: ['La Poursuite l’a eu.', 'Une lame, et c’était fini.'],
   froid: ['Le froid a fini le travail.'],
 };
+
+// Le vent qui tombe, et ce qu'en disent ceux qui l'écoutent.
+export const ACCALMIE = [
+  ['oroshi', 'Il dort. Marchez, tant qu’il dort.'],
+  ['caracole', 'Écoutez ça : on entend nos pieds. Quelle horreur.'],
+  ['sov', 'Le vent nous laisse. J’entends écrire ma plume.'],
+  ['pietro', 'Personne ne ralentit. Un calme, ça se paye toujours.'],
+];
+export const PRESAGE = {
+  tombe: ['Le vent tombe. Trop vite. Personne ne parle.', 'Il retient son souffle. Je n’aime pas ça.', 'Plus rien. Ce n’est pas un calme, c’est un recul.'],
+  monte: ['Il revient. Écoutez-le monter : ce n’est pas une rafale.', 'Il forcit, et il ne redescend plus. Cherchez un creux.', 'Ça monte de l’amont, et ça ne s’arrête pas.'],
+};
